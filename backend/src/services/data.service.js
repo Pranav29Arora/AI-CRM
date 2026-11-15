@@ -591,11 +591,15 @@ class DataService {
     }
 
     const newMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       sender: messageData.sender || "salesperson",
       text: messageData.text,
       timestamp: new Date().toISOString(),
-      status: messageData.status || "sent"
+      status: messageData.status || "sent",
+      isAiGenerated: !!messageData.isAiGenerated,
+      intent: messageData.intent || null,
+      tacticApplied: messageData.tacticApplied || null,
+      evaluatedPrice: messageData.evaluatedPrice || null
     };
 
     conversation.messages.push(newMessage);

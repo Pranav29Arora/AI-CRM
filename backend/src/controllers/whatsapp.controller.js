@@ -39,6 +39,87 @@ export const getConversationById = (req, res, next) => {
   }
 };
 
+export const getConversationContext = (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const context = whatsappService.getConversationContext(id);
+    res.json({
+      success: true,
+      data: context
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getOpeningOutreach = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { tone } = req.query;
+    const result = await whatsappService.getOpeningOutreach(id, tone || 'formal');
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const sendOpeningOutreach = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { tone, text } = req.body || {};
+    const result = await whatsappService.sendOpeningOutreach(id, {
+      tone: tone || 'formal',
+      text
+    });
+    res.status(201).json({
+      success: true,
+      message: "Opening outreach dispatched via AI Sales Agent.",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const processBuyerMessage = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { text, tone, autoReply } = req.body || {};
+    const result = await whatsappService.processBuyerMessage({
+      conversationId: id,
+      text,
+      tone: tone || 'relationship',
+      autoReply: autoReply !== undefined ? autoReply : true
+    });
+    res.status(201).json({
+      success: true,
+      message: result.aiReply ? "Buyer message processed and AI sales response generated." : "Buyer message recorded.",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const initiateConversation = async (req, res, next) => {
+  try {
+    const { customerId, productId } = req.body;
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: "customerId is required." });
+    }
+    const conv = await whatsappService.createOrGetConversationForCustomer({ customerId, productId });
+    res.status(200).json({
+      success: true,
+      data: conv
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const sendMessage = async (req, res, next) => {
   try {
     const { id } = req.params;
