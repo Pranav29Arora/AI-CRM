@@ -42,17 +42,9 @@ class DataService {
   async initFirestore() {
     try {
       console.log('[Firestore] Checking collections in ai-crm-f73a5...');
-      const prodSnap = await getDocs(collection(db, 'products'));
-
-      if (prodSnap.empty) {
-        console.log('[Firestore] Database is empty. Seeding initial catalog, customers, and negotiations...');
-        await this.seedAllToFirestore();
-      } else {
-        console.log(`[Firestore] Found ${prodSnap.size} existing products. Syncing local state with Firestore...`);
-        await this.syncFromFirestore();
-      }
+      await this.syncFromFirestore();
       this.isInitialized = true;
-      console.log('[Firestore] Live synchronization active.');
+      console.log(`[Firestore] Ready. Active catalog: ${this.products.length}, customers: ${this.customers.length}`);
     } catch (err) {
       console.error('[Firestore Sync Error]:', err.message);
     }
@@ -60,33 +52,7 @@ class DataService {
 
   async seedAllToFirestore() {
     try {
-      // Products
-      for (const p of seedProducts) {
-        await setDoc(doc(db, 'products', p.id), p);
-      }
-      // Customers
-      for (const c of seedCustomers) {
-        await setDoc(doc(db, 'customers', c.id), c);
-      }
-      // Negotiations
-      for (const n of seedNegotiations) {
-        await setDoc(doc(db, 'negotiations', n.id), n);
-      }
-      // Conversations
-      for (const conv of seedConversations) {
-        await setDoc(doc(db, 'conversations', conv.id), conv);
-      }
-      // Reminders
-      for (const r of seedReminders) {
-        await setDoc(doc(db, 'reminders', r.id), r);
-      }
-      // Users
-      for (const u of seedUsers) {
-        await setDoc(doc(db, 'users', u.id), u);
-      }
-
       await this.syncFromFirestore();
-      console.log('[Firestore] Initial seed data successfully written to Cloud Firestore.');
     } catch (err) {
       console.error('[Firestore Seeding Failed]:', err.message);
     }
@@ -103,39 +69,37 @@ class DataService {
         getDocs(collection(db, 'users'))
       ]);
 
-      if (!prodSnap.empty) {
-        this.products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      if (!custSnap.empty) {
-        this.customers = custSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      if (!negSnap.empty) {
-        this.negotiations = negSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      if (!convSnap.empty) {
-        this.conversations = convSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      if (!remSnap.empty) {
-        this.reminders = remSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      if (!userSnap.empty) {
-        this.users = userSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
+      this.products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      this.customers = custSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      this.negotiations = negSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      this.conversations = convSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      this.reminders = remSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      this.users = userSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch (err) {
       console.warn('[Firestore Sync Warning]:', err.message);
     }
   }
 
   async resetToSeed() {
-    console.log('[Firestore] Resetting all collections to seed data...');
-    this.users = JSON.parse(JSON.stringify(seedUsers));
-    this.products = JSON.parse(JSON.stringify(seedProducts));
-    this.customers = JSON.parse(JSON.stringify(seedCustomers));
-    this.negotiations = JSON.parse(JSON.stringify(seedNegotiations));
-    this.conversations = JSON.parse(JSON.stringify(seedConversations));
-    this.reminders = JSON.parse(JSON.stringify(seedReminders));
-
-    await this.seedAllToFirestore();
+    console.log('[Firestore] Clearing all collections...');
+    const collectionsToClear = ['products', 'customers', 'negotiations', 'conversations', 'reminders'];
+    for (const colName of collectionsToClear) {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        if (!snap.empty) {
+          const batch = writeBatch(db);
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+      } catch (err) {
+        console.warn(`[Firestore Clear Warning in ${colName}]:`, err.message);
+      }
+    }
+    this.products = [];
+    this.customers = [];
+    this.negotiations = [];
+    this.conversations = [];
+    this.reminders = [];
     return true;
   }
 
@@ -166,14 +130,26 @@ class DataService {
   }
 
   // --- Products ---
+  async syncProducts() {
+    try {
+      const snap = await getDocs(collection(db, 'products'));
+      if (!snap.empty) {
+        this.products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+    } catch (err) {
+      console.warn('[Firestore Product Sync Warning]:', err.message);
+    }
+    return this.products;
+  }
+
   getAllProducts({ search, category } = {}) {
     let result = [...this.products];
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q)
+        p.name?.toLowerCase().includes(q) ||
+        p.sku?.toLowerCase().includes(q) ||
+        p.category?.toLowerCase().includes(q)
       );
     }
     if (category && category !== 'All') {
@@ -182,8 +158,23 @@ class DataService {
     return result;
   }
 
-  getProductById(id) {
-    return this.products.find(p => p.id === id);
+  async getProductById(id) {
+    const cached = this.products.find(p => p.id === id);
+    if (cached) return cached;
+
+    try {
+      const snap = await getDoc(doc(db, 'products', id));
+      if (snap.exists()) {
+        const prod = { id: snap.id, ...snap.data() };
+        const idx = this.products.findIndex(p => p.id === id);
+        if (idx >= 0) this.products[idx] = prod;
+        else this.products.push(prod);
+        return prod;
+      }
+    } catch (err) {
+      console.warn('[Firestore getProductById Warning]:', err.message);
+    }
+    return this.products.find(p => p.id === id) || null;
   }
 
   validateProductPricing({ costPrice, absoluteLowerLimit, preferredMinPrice, targetPrice }) {
@@ -236,13 +227,12 @@ class DataService {
       createdAt: new Date().toISOString()
     };
 
-    this.products.unshift(newProduct);
+    // Commit to Cloud Firestore directly
+    await setDoc(doc(db, 'products', newProduct.id), newProduct);
 
-    try {
-      await setDoc(doc(db, 'products', newProduct.id), newProduct);
-    } catch (err) {
-      console.warn('[Firestore Product Write Warning]:', err.message);
-    }
+    // Keep memory cache updated
+    this.products.unshift(newProduct);
+    console.log(`[Firestore] Successfully created product "${newProduct.name}" (${newProduct.id}) in Cloud Firestore.`);
 
     return newProduct;
   }
@@ -356,14 +346,25 @@ class DataService {
   }
 
   async updateProduct(id, productData) {
-    const index = this.products.findIndex(p => p.id === id);
-    if (index === -1) {
+    let existing = this.products.find(p => p.id === id);
+    if (!existing) {
+      try {
+        const snap = await getDoc(doc(db, 'products', id));
+        if (snap.exists()) {
+          existing = { id: snap.id, ...snap.data() };
+          this.products.push(existing);
+        }
+      } catch (e) {
+        console.warn('[Firestore Product Lookup Warning]:', e.message);
+      }
+    }
+
+    if (!existing) {
       const err = new Error(`Product with ID ${id} not found.`);
       err.status = 404;
       throw err;
     }
 
-    const existing = this.products[index];
     const costPrice = productData.costPrice !== undefined ? Number(productData.costPrice) : existing.costPrice;
     const absoluteLowerLimit = productData.absoluteLowerLimit !== undefined ? Number(productData.absoluteLowerLimit) : existing.absoluteLowerLimit;
     const preferredMinPrice = productData.preferredMinPrice !== undefined ? Number(productData.preferredMinPrice) : existing.preferredMinPrice;
@@ -382,7 +383,7 @@ class DataService {
       throw err;
     }
 
-    this.products[index] = {
+    const updatedProduct = {
       ...existing,
       ...productData,
       costPrice,
@@ -393,31 +394,33 @@ class DataService {
       updatedAt: new Date().toISOString()
     };
 
-    try {
-      await updateDoc(doc(db, 'products', id), this.products[index]);
-    } catch (err) {
-      console.warn('[Firestore Product Update Warning]:', err.message);
+    // Persist directly to Cloud Firestore
+    await setDoc(doc(db, 'products', id), updatedProduct, { merge: true });
+
+    // Update in-memory cache
+    const index = this.products.findIndex(p => p.id === id);
+    if (index >= 0) {
+      this.products[index] = updatedProduct;
+    } else {
+      this.products.unshift(updatedProduct);
     }
 
-    return this.products[index];
+    console.log(`[Firestore] Successfully updated product "${updatedProduct.name}" (${id}) in Cloud Firestore.`);
+    return updatedProduct;
   }
 
   async deleteProduct(id) {
     const index = this.products.findIndex(p => p.id === id);
-    if (index === -1) {
-      const err = new Error(`Product with ID ${id} not found.`);
-      err.status = 404;
-      throw err;
-    }
-    const removed = this.products.splice(index, 1)[0];
-
-    try {
-      await deleteDoc(doc(db, 'products', id));
-    } catch (err) {
-      console.warn('[Firestore Product Delete Warning]:', err.message);
+    let removed = null;
+    if (index >= 0) {
+      removed = this.products.splice(index, 1)[0];
     }
 
-    return removed;
+    // Delete directly from Cloud Firestore
+    await deleteDoc(doc(db, 'products', id));
+
+    console.log(`[Firestore] Successfully deleted product (${id}) from Cloud Firestore.`);
+    return removed || { id, deleted: true };
   }
 
   // --- Customers ---
@@ -688,22 +691,43 @@ class DataService {
       ? Math.round((this.customers.filter(c => c.leadStatus === "Closed Won").length / totalCustomers) * 100)
       : 0;
 
-    const monthlyTrends = [
-      { month: 'Sep', revenue: 420000, profit: 54000, deals: 3 },
-      { month: 'Oct', revenue: 680000, profit: 82000, deals: 5 },
-      { month: 'Nov', revenue: 890000, profit: 114000, deals: 8 },
-      { month: 'Dec', revenue: 1240000, profit: 168000, deals: 11 },
-      { month: 'Jan', revenue: 980000, profit: 132000, deals: 9 },
-      { month: 'Feb', revenue: Math.max(revenue, 750000), profit: Math.max(grossProfit, 98000), deals: Math.max(completedDeals, 6) }
-    ];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const currentMonthIdx = new Date().getMonth();
+    const last6Months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(currentMonthIdx - i);
+      const mName = months[d.getMonth()];
+      last6Months.push({ month: mName, revenue: 0, profit: 0, deals: 0 });
+    }
 
-    const categoryDistribution = [
-      { name: 'Laptops & Computing', count: this.products.filter(p => p.category.includes('Laptop') || p.category.includes('Comput')).length || 1, value: 38 },
-      { name: 'Consumer Electronics', count: this.products.filter(p => p.category.includes('Consumer') || p.category.includes('TV')).length || 1, value: 24 },
-      { name: 'Appliances', count: this.products.filter(p => p.category.includes('Appliance')).length || 1, value: 18 },
-      { name: 'Photography', count: this.products.filter(p => p.category.includes('Photo')).length || 1, value: 12 },
-      { name: 'Audio & HiFi', count: this.products.filter(p => p.category.includes('Audio')).length || 1, value: 8 },
-    ];
+    this.negotiations
+      .filter(n => n.status === "Accepted")
+      .forEach(n => {
+        const nDate = new Date(n.createdAt || Date.now());
+        const mName = months[nDate.getMonth()];
+        const match = last6Months.find(m => m.month === mName);
+        if (match) {
+          match.revenue += (n.currentOffer * n.quantity);
+          match.profit += (n.grossProfit || 0);
+          match.deals += 1;
+        }
+      });
+    const monthlyTrends = last6Months;
+
+    let categoryDistribution = [];
+    if (this.products.length > 0) {
+      const categoryCounts = {};
+      this.products.forEach(p => {
+        const cat = p.category || 'General';
+        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+      });
+      categoryDistribution = Object.entries(categoryCounts).map(([name, count]) => ({
+        name,
+        count,
+        value: Math.round((count / this.products.length) * 100)
+      }));
+    }
 
     return {
       metrics: {

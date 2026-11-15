@@ -19,8 +19,9 @@ export function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public Landing Page */}
+          {/* Public Landing Page (available at root / and /landing) */}
           <Route path="/" element={<LandingPage />} />
+          <Route path="/landing" element={<LandingPage />} />
 
           {/* Authentication Routes (Public only - redirect to dashboard if logged in) */}
           <Route

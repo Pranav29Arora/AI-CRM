@@ -10,6 +10,8 @@ import {
   Sparkles,
   AlertTriangle,
   CheckCircle2,
+  CheckCheck,
+  Check,
   Calendar,
   Search,
   Plus,
@@ -280,36 +282,46 @@ export const ConversationsPage = () => {
 
           {/* Conversation List Items */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
-            {conversations.map((conv) => (
-              <button
-                key={conv.id}
-                onClick={() => handleSelectConversation(conv)}
-                className={`w-full text-left p-3.5 transition-colors flex items-start gap-3 ${
-                  activeConvId === conv.id ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]/60'
-                }`}
-              >
-                <div className="w-10 h-10 rounded-full bg-emerald-700 flex items-center justify-center font-bold text-white flex-shrink-0 text-sm">
-                  {conv.customerName.charAt(0)}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <p className="text-xs font-bold text-white truncate">{conv.customerName}</p>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {new Date(conv.lastMessageTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+            {conversations.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                <MessageSquare className="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60" />
+                <p className="text-xs font-semibold text-slate-400 mb-1">No chats active</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Click 'Simulate Incoming Message' or open WhatsApp from the Customers page
+                </p>
+              </div>
+            ) : (
+              conversations.map((conv) => (
+                <button
+                  key={conv.id}
+                  onClick={() => handleSelectConversation(conv)}
+                  className={`w-full text-left p-3.5 transition-colors flex items-start gap-3 ${
+                    activeConvId === conv.id ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]/60'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-full bg-emerald-700 flex items-center justify-center font-bold text-white flex-shrink-0 text-sm">
+                    {conv.customerName.charAt(0)}
                   </div>
-                  <p className="text-[11px] text-slate-400 truncate">{conv.lastMessage}</p>
-                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">{conv.customerPhone}</p>
-                </div>
 
-                {conv.unreadCount > 0 && (
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-emerald-500 text-slate-950">
-                    {conv.unreadCount}
-                  </span>
-                )}
-              </button>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className="text-xs font-bold text-white truncate">{conv.customerName}</p>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {new Date(conv.lastMessageTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate">{conv.lastMessage}</p>
+                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">{conv.customerPhone}</p>
+                  </div>
+
+                  {conv.unreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-emerald-500 text-slate-950">
+                      {conv.unreadCount}
+                    </span>
+                  )}
+                </button>
+              ))
+            )}
           </div>
         </div>
 
@@ -389,11 +401,11 @@ export const ConversationsPage = () => {
             )}
 
             {/* Messages Scroll Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0b141a]">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-[#0b141a] ambient-dot-grid">
               {/* Simulation Mode watermark notice */}
-              <div className="text-center my-2">
-                <span className="px-3 py-1 rounded-full text-[10px] font-semibold bg-slate-900 border border-slate-800 text-slate-400">
-                  🔒 Messages are simulated locally in Phase 1 evaluation sandbox
+              <div className="text-center my-1">
+                <span className="px-3.5 py-1 rounded-full text-[10px] font-semibold bg-slate-900/90 border border-slate-800 text-slate-400 shadow-sm backdrop-blur-sm">
+                  🔒 WhatsApp Simulation Sandbox • Verified Margin Protection Active
                 </span>
               </div>
 
@@ -402,21 +414,24 @@ export const ConversationsPage = () => {
                 return (
                   <div
                     key={msg.id}
-                    className={`flex flex-col ${isCustomer ? 'items-start' : 'items-end'}`}
+                    className={`flex flex-col ${isCustomer ? 'items-start' : 'items-end'} animate-fade-in`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-2xl p-3 text-xs leading-relaxed shadow-md ${
+                      className={`max-w-[78%] rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-lg transition-all ${
                         isCustomer
-                          ? 'bg-[#202c33] text-slate-100 rounded-tl-none border border-slate-700/50'
-                          : 'bg-[#005c4b] text-white rounded-tr-none'
+                          ? 'bg-[#202c33] text-slate-100 rounded-tl-none border border-slate-700/60'
+                          : 'bg-gradient-to-r from-[#005c4b] to-[#016f5a] text-white rounded-tr-none border border-emerald-600/30'
                       }`}
                     >
-                      <p className="whitespace-pre-wrap">{msg.text}</p>
-                      <div className="flex items-center justify-end gap-1.5 mt-1 text-[9px] text-slate-400 font-mono">
+                      <div className="flex items-center gap-1.5 mb-1 opacity-70 text-[10px] font-semibold uppercase tracking-wider">
+                        <span>{isCustomer ? activeConv.customerName : 'You (Sales Desk)'}</span>
+                      </div>
+                      <p className="whitespace-pre-wrap font-sans text-[12.5px] leading-relaxed">{msg.text}</p>
+                      <div className="flex items-center justify-end gap-1.5 mt-1.5 text-[10px] text-slate-300 font-mono">
                         <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         {!isCustomer && (
-                          <span className="text-emerald-300 font-sans">
-                            {msg.status === 'simulated' ? '[Simulated]' : '✓✓'}
+                          <span className="text-sky-400 inline-flex items-center" title="Delivered & Read">
+                            <CheckCheck className="w-3.5 h-3.5" />
                           </span>
                         )}
                       </div>
@@ -429,26 +444,31 @@ export const ConversationsPage = () => {
 
             {/* AI Draft Suggestion Box */}
             {aiDraft && (
-              <div className="p-3 bg-brand-950/70 border-t border-brand-500/30 flex-shrink-0 animate-fade-in">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px] font-bold text-brand-300 flex items-center gap-1.5">
-                    <Bot className="w-3.5 h-3.5 text-brand-400" />
-                    AI Proposed Counter Reply ({aiDraft.mode}):
-                  </span>
+              <div className="p-4 bg-gradient-to-r from-brand-950/90 via-slate-900/95 to-brand-950/90 border-t border-brand-500/40 flex-shrink-0 animate-fade-in shadow-[0_-5px_20px_rgba(59,130,246,0.1)]">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-brand-500/20 text-brand-300 flex items-center justify-center">
+                      <Bot className="w-4 h-4 text-brand-400" />
+                    </span>
+                    <span className="text-xs font-bold text-brand-200">
+                      AI Proposed Strategy Reply ({aiDraft.mode}):
+                    </span>
+                  </div>
                   <button
                     onClick={() => setAiDraft(null)}
-                    className="text-slate-400 hover:text-white text-xs"
+                    className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors text-xs"
+                    title="Dismiss"
                   >
                     ✕
                   </button>
                 </div>
-                <p className="text-xs text-slate-200 italic mb-2 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                <p className="text-xs text-slate-200 italic mb-3 leading-relaxed bg-slate-950/70 p-3 rounded-xl border border-brand-500/20 font-sans">
                   "{aiDraft.suggestedReply}"
                 </p>
-                <div className="flex justify-end gap-2">
+                <div className="flex items-center justify-end gap-2.5">
                   <button
                     onClick={() => setInputMessage(aiDraft.suggestedReply)}
-                    className="px-3 py-1 text-xs font-semibold bg-brand-600/40 hover:bg-brand-600/60 text-brand-200 rounded-lg border border-brand-500/40 transition-colors"
+                    className="px-3.5 py-1.5 text-xs font-semibold bg-brand-600/30 hover:bg-brand-600/50 text-brand-200 rounded-xl border border-brand-500/40 transition-all hover:scale-[1.02]"
                   >
                     Copy to Input Field
                   </button>
@@ -457,29 +477,52 @@ export const ConversationsPage = () => {
                       setInputMessage(aiDraft.suggestedReply);
                       setTimeout(() => handleSendMessage(), 100);
                     }}
-                    className="px-3 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors flex items-center gap-1"
+                    className="px-4 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5 hover:scale-[1.02]"
                   >
-                    <Send className="w-3 h-3" /> Approve & Send Now
+                    <Send className="w-3.5 h-3.5" /> Approve & Send Now
                   </button>
                 </div>
               </div>
             )}
 
+            {/* Quick Negotiation Playbook Pills */}
+            <div className="px-3.5 py-2 bg-[#182229] border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto text-[11px]">
+              <span className="text-slate-400 font-semibold flex-shrink-0 flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                Quick Plays:
+              </span>
+              {[
+                { label: '50% Advance Wire', text: 'We can accept this counter if we can arrange 50% advance bank wire to lock the consignment today.' },
+                { label: '24-Hour Price Lock', text: 'This special wholesale quote is locked for 24 hours while stock remains allocated.' },
+                { label: 'Volume Tier (+5 Units)', text: 'If you can step up the order by 5 more units, we can unlock the tier-1 distributor pricing bracket.' },
+                { label: 'Official GST Invoice', text: 'Price is inclusive of standard packaging and includes a 100% compliant GST tax invoice.' }
+              ].map((play, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setInputMessage(prev => prev ? `${prev} ${play.text}` : play.text)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700/70 hover:border-brand-500/50 text-slate-300 hover:text-white flex-shrink-0 transition-colors"
+                >
+                  {play.label}
+                </button>
+              ))}
+            </div>
+
             {/* Bottom Bar: Action & Message Input */}
-            <div className="p-3 bg-[#202c33] border-t border-slate-800 flex-shrink-0 space-y-2">
+            <div className="p-3 bg-[#202c33] border-t border-slate-800 flex-shrink-0 space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleGenerateAIReply(draftTone)}
                     disabled={generatingAI}
-                    className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-brand-600/30 hover:bg-brand-600/50 text-brand-300 border border-brand-500/30 rounded-lg transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-brand-600/30 hover:bg-brand-600/50 text-brand-300 border border-brand-500/40 rounded-xl transition-all disabled:opacity-50 shadow-sm"
                   >
                     <Bot className={`w-3.5 h-3.5 ${generatingAI ? 'animate-spin' : ''}`} />
                     {generatingAI ? "Drafting with AI..." : "Draft AI Counter Reply"}
                   </button>
 
                   {/* Tone Selector Pills */}
-                  <div className="flex items-center gap-1 bg-[#111b21] p-0.5 rounded-lg border border-slate-700/60 text-[10px]">
+                  <div className="flex items-center gap-1 bg-[#111b21] p-1 rounded-xl border border-slate-700/60 text-[10px]">
                     {[
                       { id: 'relationship', label: '🤝 Trade' },
                       { id: 'assertive', label: '🛡️ Firm' },
@@ -493,9 +536,9 @@ export const ConversationsPage = () => {
                           setDraftTone(t.id);
                           if (aiDraft) handleGenerateAIReply(t.id);
                         }}
-                        className={`px-1.5 py-0.5 rounded transition-colors ${
+                        className={`px-2 py-0.5 rounded-lg transition-colors font-medium ${
                           draftTone === t.id
-                            ? 'bg-brand-600 text-white font-bold'
+                            ? 'bg-brand-600 text-white font-bold shadow-sm'
                             : 'text-slate-400 hover:text-slate-200'
                         }`}
                       >
@@ -505,8 +548,8 @@ export const ConversationsPage = () => {
                   </div>
                 </div>
 
-                <span className="text-[10px] text-slate-500">
-                  Enter to send • Salesperson approval enforced
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Press Enter to send • Zero margin leak policy
                 </span>
               </div>
 
@@ -516,12 +559,12 @@ export const ConversationsPage = () => {
                   placeholder="Type a response or counter-offer to buyer..."
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  className="flex-1 bg-[#2a3942] border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  className="flex-1 bg-[#2a3942] border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-sans"
                 />
                 <button
                   type="submit"
                   disabled={sending || !inputMessage.trim()}
-                  className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all disabled:opacity-50 flex-shrink-0"
+                  className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/25 transition-all disabled:opacity-50 flex-shrink-0 hover:scale-105"
                   title="Send message"
                 >
                   <Send className="w-4 h-4" />
@@ -530,10 +573,21 @@ export const ConversationsPage = () => {
             </div>
           </div>
         ) : (
-          <div className="md:col-span-8 flex flex-col items-center justify-center text-slate-500 p-8">
-            <MessageSquare className="w-12 h-12 mb-3 text-slate-600" />
-            <p className="text-sm font-semibold text-slate-300">Select a conversation to begin chatting</p>
-            <p className="text-xs text-slate-500 mt-1">Or click 'Simulate Incoming Message' above</p>
+          <div className="md:col-span-8 flex flex-col items-center justify-center text-center p-12 bg-[#0b141a]">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 shadow-xl shadow-emerald-500/5">
+              <MessageSquare className="w-8 h-8" />
+            </div>
+            <h3 className="text-base font-bold text-white mb-1.5">WhatsApp Deal Desk</h3>
+            <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
+              Real-time WhatsApp Web simulation with automated customer matching and Gemini AI reply drafting.
+            </p>
+            <button
+              onClick={() => setIsSimulateModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl shadow-lg shadow-emerald-600/25 transition-all hover:scale-[1.02]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Simulate Customer Inquiry</span>
+            </button>
           </div>
         )}
       </div>

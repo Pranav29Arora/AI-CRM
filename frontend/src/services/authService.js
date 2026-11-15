@@ -8,7 +8,9 @@ import {
   sendPasswordResetEmail,
   setPersistence,
   browserLocalPersistence,
-  browserSessionPersistence
+  browserSessionPersistence,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { apiRequest } from './api.js';
@@ -46,6 +48,14 @@ export function mapAuthError(err) {
       return 'Please enter your email address.';
     case 'auth/requires-recent-login':
       return 'This action requires recent authentication. Please log in again.';
+    case 'auth/popup-closed-by-user':
+      return 'Google sign-in popup was closed before completing authentication.';
+    case 'auth/cancelled-popup-request':
+      return 'Google sign-in was cancelled. Please try again.';
+    case 'auth/popup-blocked':
+      return 'Sign-in popup was blocked by your browser. Please allow popups for this site.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with this email using a different sign-in method.';
     default:
       if (err.message) {
         return err.message.replace(/^Firebase:\s*/, '').replace(/\s*\([^)]*\)\.?$/, '');
@@ -60,9 +70,46 @@ export function mapAuthError(err) {
  */
 export const authService = {
   /**
+   * Helper to write session token & user profile to appropriate storage
+   */
+  setStoredSession(token, user, rememberMe = null) {
+    const isRemembered = rememberMe !== null 
+      ? rememberMe 
+      : localStorage.getItem('aicrm_remember_me') === 'true';
+
+    if (token) {
+      sessionStorage.setItem('aicrm_token', token);
+      if (isRemembered) {
+        localStorage.setItem('aicrm_token', token);
+        localStorage.setItem('aicrm_remember_me', 'true');
+      } else {
+        localStorage.removeItem('aicrm_token');
+        localStorage.removeItem('aicrm_remember_me');
+      }
+    }
+
+    if (user) {
+      sessionStorage.setItem('aicrm_user', JSON.stringify(user));
+      if (isRemembered) {
+        localStorage.setItem('aicrm_user', JSON.stringify(user));
+      } else {
+        localStorage.removeItem('aicrm_user');
+      }
+    }
+  },
+
+  clearStoredSession() {
+    sessionStorage.removeItem('aicrm_token');
+    sessionStorage.removeItem('aicrm_user');
+    localStorage.removeItem('aicrm_token');
+    localStorage.removeItem('aicrm_user');
+    localStorage.removeItem('aicrm_remember_me');
+  },
+
+  /**
    * Real user login via Firebase Authentication
    */
-  async login(email, password, rememberMe = true) {
+  async login(email, password, rememberMe = false) {
     if (!email || !email.trim()) {
       throw new Error('Please enter your email address.');
     }
@@ -113,8 +160,7 @@ export const authService = {
         console.warn('[Firestore Profile Warning]:', err.message);
       }
 
-      localStorage.setItem('aicrm_token', token);
-      localStorage.setItem('aicrm_user', JSON.stringify(profile));
+      this.setStoredSession(token, profile, rememberMe);
 
       return {
         user: profile,
@@ -123,6 +169,65 @@ export const authService = {
       };
     } catch (firebaseErr) {
       console.error('[Firebase Auth Error]:', firebaseErr.code, firebaseErr.message);
+      throw new Error(mapAuthError(firebaseErr));
+    }
+  },
+
+  /**
+   * Real user sign-in via Google Authentication
+   */
+  async loginWithGoogle(rememberMe = false) {
+    try {
+      // Set persistence based on remember me choice
+      try {
+        await setPersistence(
+          auth,
+          rememberMe ? browserLocalPersistence : browserSessionPersistence
+        );
+      } catch (persistErr) {
+        console.warn('[Firebase Google Auth] Persistence notice:', persistErr.message);
+      }
+
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+
+      console.log('[Firebase Auth] Launching Google sign-in popup...');
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      const token = await user.getIdToken();
+
+      let profile = {
+        id: user.uid,
+        uid: user.uid,
+        email: user.email,
+        name: user.displayName || user.email?.split('@')[0] || 'Wholesale Director',
+        role: 'Wholesale & Retail Director',
+        company: 'Apex Wholesale & Retail Enterprises',
+        avatar: user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        createdAt: new Date().toISOString()
+      };
+
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          profile = { ...profile, ...userDoc.data(), id: user.uid, uid: user.uid };
+        } else {
+          // If first time sign-in, save profile to Cloud Firestore
+          await setDoc(doc(db, 'users', user.uid), profile);
+        }
+      } catch (err) {
+        console.warn('[Firestore Profile Warning]:', err.message);
+      }
+
+      this.setStoredSession(token, profile, rememberMe);
+
+      return {
+        user: profile,
+        token,
+        message: 'Authenticated with Google via Firebase'
+      };
+    } catch (firebaseErr) {
+      console.error('[Firebase Google Auth Error]:', firebaseErr.code, firebaseErr.message);
       throw new Error(mapAuthError(firebaseErr));
     }
   },
@@ -172,8 +277,7 @@ export const authService = {
         console.warn('[Firestore Profile Write Warning]:', err.message);
       }
 
-      localStorage.setItem('aicrm_token', token);
-      localStorage.setItem('aicrm_user', JSON.stringify(profile));
+      this.setStoredSession(token, profile, false);
 
       return {
         user: profile,
@@ -229,8 +333,7 @@ export const authService = {
     } catch (err) {
       console.warn('[Firebase Auth] Sign out notice:', err.message);
     }
-    localStorage.removeItem('aicrm_token');
-    localStorage.removeItem('aicrm_user');
+    this.clearStoredSession();
   },
 
   /**
@@ -243,7 +346,7 @@ export const authService = {
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
         if (userDoc.exists()) {
           const user = { ...userDoc.data(), id: auth.currentUser.uid, uid: auth.currentUser.uid };
-          localStorage.setItem('aicrm_user', JSON.stringify(user));
+          this.setStoredSession(null, user);
           return user;
         }
       } catch (err) {
@@ -270,12 +373,7 @@ export const authService = {
    */
   async getDemoCredentials() {
     return {
-      credentials: {
-        email: 'demo@aicrm.com',
-        password: 'demo123',
-        role: 'Wholesale & Retail Director',
-        description: 'Active Firebase Authentication account with pre-seeded products in Cloud Firestore.'
-      }
+      credentials: null
     };
   },
 
@@ -285,14 +383,26 @@ export const authService = {
 
   getStoredUser() {
     try {
-      const stored = localStorage.getItem('aicrm_user');
-      return stored ? JSON.parse(stored) : null;
+      const sessionUser = sessionStorage.getItem('aicrm_user');
+      if (sessionUser) return JSON.parse(sessionUser);
+
+      if (localStorage.getItem('aicrm_remember_me') === 'true') {
+        const stored = localStorage.getItem('aicrm_user');
+        return stored ? JSON.parse(stored) : null;
+      }
+      return null;
     } catch {
       return null;
     }
   },
 
   getToken() {
-    return localStorage.getItem('aicrm_token');
+    const sessionToken = sessionStorage.getItem('aicrm_token');
+    if (sessionToken) return sessionToken;
+
+    if (localStorage.getItem('aicrm_remember_me') === 'true') {
+      return localStorage.getItem('aicrm_token');
+    }
+    return null;
   }
 };

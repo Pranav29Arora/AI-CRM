@@ -26,16 +26,17 @@ class NegotiationService {
   }
 
   evaluateBoundaries(product, offerPrice, quantity = 1) {
-    const offer = Number(offerPrice);
-    const cp = Number(product.costPrice);
-    const floor = Number(product.absoluteLowerLimit);
-    const pref = Number(product.preferredMinPrice);
-    const target = Number(product.targetPrice);
+    const offer = Number(offerPrice) || 0;
+    const cp = Number(product.costPrice) || 0;
+    const floor = Number(product.absoluteLowerLimit) || 0;
+    const pref = Number(product.preferredMinPrice) || 0;
+    const target = Number(product.targetPrice) || 0;
+    const qty = Math.max(1, Number(quantity) || 1);
 
     const metrics = this.calculatePricingMetrics({
       costPrice: cp,
       sellingPrice: offer,
-      quantity
+      quantity: qty
     });
 
     let recommendation = 'COUNTER';
@@ -54,6 +55,9 @@ class NegotiationService {
       // Suggest counter halfway between offer and preferred, or closer to preferred
       suggestedCounterPrice = Math.round((offer + pref * 2) / 3 / 100) * 100;
       if (suggestedCounterPrice < floor) suggestedCounterPrice = floor;
+      if (suggestedCounterPrice <= offer && pref > offer) {
+        suggestedCounterPrice = pref;
+      }
 
       reasoning = `Customer offer of ₹${offer.toLocaleString()} is above the absolute floor (₹${floor.toLocaleString()}), generating ₹${metrics.grossProfit.toLocaleString()} gross profit (${metrics.grossMargin}% margin). However, it is below your preferred minimum of ₹${pref.toLocaleString()}. First attempt to counter at ₹${suggestedCounterPrice.toLocaleString()} before accepting lower margin.`;
     } else {
@@ -90,7 +94,7 @@ class NegotiationService {
   }
 
   async evaluateOffer({ customerId, productId, offerPrice, quantity = 1, currentRound = 1, tone = 'relationship' }) {
-    const product = dataService.getProductById(productId);
+    const product = await dataService.getProductById(productId);
     if (!product) {
       const err = new Error(`Product ${productId} not found.`);
       err.status = 404;

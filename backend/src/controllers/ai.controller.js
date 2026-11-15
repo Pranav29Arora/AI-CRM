@@ -36,7 +36,7 @@ export const generateReplies = async (req, res, next) => {
   try {
     const { customerId, productId, offerPrice, quantity = 1, tone = 'relationship' } = req.body;
 
-    const product = dataService.getProductById(productId);
+    const product = await dataService.getProductById(productId);
     if (!product) {
       return res.status(404).json({ success: false, error: `Product ${productId} not found.` });
     }

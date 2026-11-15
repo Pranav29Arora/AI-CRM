@@ -1,8 +1,9 @@
 import { dataService } from '../services/data.service.js';
 
-export const getAllProducts = (req, res, next) => {
+export const getAllProducts = async (req, res, next) => {
   try {
     const { search, category } = req.query;
+    await dataService.syncProducts();
     const products = dataService.getAllProducts({ search, category });
     res.json({
       success: true,
@@ -14,10 +15,10 @@ export const getAllProducts = (req, res, next) => {
   }
 };
 
-export const getProductById = (req, res, next) => {
+export const getProductById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const product = dataService.getProductById(id);
+    const product = await dataService.getProductById(id);
     if (!product) {
       return res.status(404).json({
         success: false,

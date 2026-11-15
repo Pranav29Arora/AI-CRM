@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { customerService } from '../services/customerService';
+import { productService } from '../services/productService';
 import { reminderService } from '../services/reminderService';
 import {
   Users,
@@ -24,12 +25,21 @@ import {
   Loader2,
   ArrowRight,
   Tag,
-  FileText
+  FileText,
+  Package,
+  Layers,
+  Table,
+  LayoutGrid,
+  Check,
+  ChevronDown
 } from 'lucide-react';
 
 export const CustomersPage = () => {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'table'
+  const [productSearch, setProductSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -56,7 +66,8 @@ export const CustomersPage = () => {
     leadStatus: 'Active Lead',
     preferences: '',
     notes: '',
-    interestedProductsInput: '',
+    selectedProducts: [], // array of { id, name, sellingPrice, sku, category }
+    customProductInput: '',
   };
   const [formData, setFormData] = useState(initialCustomerForm);
   const [formError, setFormError] = useState('');
@@ -80,6 +91,15 @@ export const CustomersPage = () => {
     'Inactive',
   ];
 
+  const fetchProducts = async () => {
+    try {
+      const prods = await productService.getProducts();
+      setAvailableProducts(prods);
+    } catch (err) {
+      console.warn('Failed to load catalog products for customer form:', err.message);
+    }
+  };
+
   const fetchCustomers = async () => {
     try {
       setLoading(true);
@@ -96,20 +116,71 @@ export const CustomersPage = () => {
   };
 
   useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       fetchCustomers();
     }, 200);
     return () => clearTimeout(timer);
   }, [search, statusFilter]);
 
+  // Helper to resolve product name, selling price, and SKU from object or catalog lookup
+  const resolveProductInfo = (prod, custBudget = 0) => {
+    if (typeof prod === 'object' && prod !== null) {
+      const sellingPrice = Number(prod.sellingPrice || prod.targetPrice || 0);
+      let catalogMatch = null;
+      if (prod.id || prod.name) {
+        catalogMatch = availableProducts.find(p => (prod.id && p.id === prod.id) || p.name.toLowerCase() === (prod.name || '').toLowerCase());
+      }
+      const finalSellingPrice = sellingPrice > 0 ? sellingPrice : Number(catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
+      const explicitOffer = Number(prod.offeredPrice || prod.offerPrice || 0);
+      const finalOfferPrice = explicitOffer > 0 ? explicitOffer : (Number(custBudget) > 0 ? Number(custBudget) : 0);
+
+      return {
+        id: prod.id || catalogMatch?.id || '',
+        name: prod.name || catalogMatch?.name || 'Catalog Product',
+        sellingPrice: finalSellingPrice,
+        offeredPrice: finalOfferPrice,
+        sku: prod.sku || catalogMatch?.sku || '',
+        category: prod.category || catalogMatch?.category || ''
+      };
+    }
+    const str = String(prod || '').trim();
+    const match = availableProducts.find(p => p.id === str || p.name.toLowerCase() === str.toLowerCase());
+    if (match) {
+      return {
+        id: match.id,
+        name: match.name,
+        sellingPrice: Number(match.targetPrice || match.preferredMinPrice || 0),
+        offeredPrice: Number(custBudget) || 0,
+        sku: match.sku || '',
+        category: match.category || ''
+      };
+    }
+    return {
+      id: '',
+      name: str,
+      sellingPrice: 0,
+      offeredPrice: Number(custBudget) || 0,
+      sku: '',
+      category: ''
+    };
+  };
+
   const handleOpenAdd = () => {
     setFormData(initialCustomerForm);
+    setProductSearch('');
     setFormError('');
     setIsAddModalOpen(true);
   };
 
   const handleOpenEdit = (customer) => {
     setActiveCustomer(customer);
+    const existingList = Array.isArray(customer.interestedProducts) ? customer.interestedProducts : [];
+    const parsedSelected = existingList.map(item => resolveProductInfo(item, customer.budget));
+
     setFormData({
       name: customer.name,
       company: customer.company || '',
@@ -119,8 +190,10 @@ export const CustomersPage = () => {
       leadStatus: customer.leadStatus || 'Active Lead',
       preferences: customer.preferences || '',
       notes: customer.notes || '',
-      interestedProductsInput: Array.isArray(customer.interestedProducts) ? customer.interestedProducts.join(', ') : '',
+      selectedProducts: parsedSelected,
+      customProductInput: '',
     });
+    setProductSearch('');
     setFormError('');
     setIsEditModalOpen(true);
   };
@@ -168,12 +241,40 @@ export const CustomersPage = () => {
       setSubmitting(true);
       setFormError('');
 
-      const interestedProducts = formData.interestedProductsInput
-        ? formData.interestedProductsInput.split(',').map(s => s.trim()).filter(Boolean)
-        : [];
+      // Build structured interestedProducts list with catalog selling prices and customer offered prices
+      let interestedProducts = (formData.selectedProducts || []).map(p => ({
+        id: p.id || '',
+        name: p.name,
+        sellingPrice: Number(p.sellingPrice) || 0,
+        offeredPrice: Number(p.offeredPrice !== undefined && p.offeredPrice !== '' ? p.offeredPrice : (formData.budget || 0)),
+        sku: p.sku || '',
+        category: p.category || ''
+      }));
+
+      // If user typed something into customProductInput
+      if (formData.customProductInput?.trim()) {
+        const customName = formData.customProductInput.trim();
+        const match = availableProducts.find(p => p.name.toLowerCase() === customName.toLowerCase());
+        const defaultOffer = Number(formData.budget) || (match ? Number(match.preferredMinPrice || match.targetPrice || 0) : 0);
+        interestedProducts.push({
+          id: match?.id || '',
+          name: customName,
+          sellingPrice: match ? Number(match.targetPrice || match.preferredMinPrice || 0) : 0,
+          offeredPrice: defaultOffer,
+          sku: match?.sku || 'CUSTOM',
+          category: match?.category || 'Custom'
+        });
+      }
 
       await customerService.createCustomer({
-        ...formData,
+        name: formData.name,
+        company: formData.company,
+        phone: formData.phone,
+        email: formData.email,
+        budget: formData.budget,
+        leadStatus: formData.leadStatus,
+        preferences: formData.preferences,
+        notes: formData.notes,
         interestedProducts,
       });
 
@@ -197,12 +298,38 @@ export const CustomersPage = () => {
       setSubmitting(true);
       setFormError('');
 
-      const interestedProducts = formData.interestedProductsInput
-        ? formData.interestedProductsInput.split(',').map(s => s.trim()).filter(Boolean)
-        : [];
+      let interestedProducts = (formData.selectedProducts || []).map(p => ({
+        id: p.id || '',
+        name: p.name,
+        sellingPrice: Number(p.sellingPrice) || 0,
+        offeredPrice: Number(p.offeredPrice !== undefined && p.offeredPrice !== '' ? p.offeredPrice : (formData.budget || 0)),
+        sku: p.sku || '',
+        category: p.category || ''
+      }));
+
+      if (formData.customProductInput?.trim()) {
+        const customName = formData.customProductInput.trim();
+        const match = availableProducts.find(p => p.name.toLowerCase() === customName.toLowerCase());
+        const defaultOffer = Number(formData.budget) || (match ? Number(match.preferredMinPrice || match.targetPrice || 0) : 0);
+        interestedProducts.push({
+          id: match?.id || '',
+          name: customName,
+          sellingPrice: match ? Number(match.targetPrice || match.preferredMinPrice || 0) : 0,
+          offeredPrice: defaultOffer,
+          sku: match?.sku || 'CUSTOM',
+          category: match?.category || 'Custom'
+        });
+      }
 
       await customerService.updateCustomer(activeCustomer.id, {
-        ...formData,
+        name: formData.name,
+        company: formData.company,
+        phone: formData.phone,
+        email: formData.email,
+        budget: formData.budget,
+        leadStatus: formData.leadStatus,
+        preferences: formData.preferences,
+        notes: formData.notes,
         interestedProducts,
       });
 
@@ -266,32 +393,314 @@ export const CustomersPage = () => {
     }
   };
 
+  const totalBudget = customers.reduce((sum, c) => sum + (Number(c.budget) || 0), 0);
+  const activeLeadsCount = customers.filter(c => c.leadStatus === 'Active Lead' || c.leadStatus === 'Under Negotiation').length;
+  const closedWonCount = customers.filter(c => c.leadStatus === 'Closed Won').length;
+
+  // Interactive Product Selector with Catalog database items and Selling Prices
+  const renderProductSelector = () => {
+    const filteredAvailable = availableProducts.filter(p => {
+      if (!productSearch) return true;
+      const term = productSearch.toLowerCase();
+      return (
+        p.name?.toLowerCase().includes(term) ||
+        p.category?.toLowerCase().includes(term) ||
+        p.sku?.toLowerCase().includes(term)
+      );
+    });
+
+    const isSelected = (prodId, prodName) => {
+      return (formData.selectedProducts || []).some(sp => (sp.id && sp.id === prodId) || sp.name === prodName);
+    };
+
+    const toggleProduct = (prod) => {
+      const exists = isSelected(prod.id, prod.name);
+      if (exists) {
+        setFormData(prev => ({
+          ...prev,
+          selectedProducts: (prev.selectedProducts || []).filter(sp => (sp.id ? sp.id !== prod.id : sp.name !== prod.name))
+        }));
+      } else {
+        const defaultOffer = Number(formData.budget) || Number(prod.preferredMinPrice || prod.targetPrice || 0);
+        setFormData(prev => ({
+          ...prev,
+          selectedProducts: [
+            ...(prev.selectedProducts || []),
+            {
+              id: prod.id,
+              name: prod.name,
+              sellingPrice: Number(prod.targetPrice || prod.preferredMinPrice || 0),
+              offeredPrice: defaultOffer,
+              sku: prod.sku || '',
+              category: prod.category || ''
+            }
+          ]
+        }));
+      }
+    };
+
+    const removeSelected = (index) => {
+      setFormData(prev => ({
+        ...prev,
+        selectedProducts: (prev.selectedProducts || []).filter((_, i) => i !== index)
+      }));
+    };
+
+    const handleAddCustom = (e) => {
+      if (e) e.preventDefault();
+      if (!formData.customProductInput?.trim()) return;
+      const customName = formData.customProductInput.trim();
+      const match = availableProducts.find(p => p.name.toLowerCase() === customName.toLowerCase());
+      const defaultOffer = Number(formData.budget) || (match ? Number(match.preferredMinPrice || match.targetPrice || 0) : 0);
+      setFormData(prev => ({
+        ...prev,
+        selectedProducts: [
+          ...(prev.selectedProducts || []),
+          {
+            id: match?.id || '',
+            name: customName,
+            sellingPrice: match ? Number(match.targetPrice || match.preferredMinPrice || 0) : 0,
+            offeredPrice: defaultOffer,
+            sku: match?.sku || 'CUSTOM',
+            category: match?.category || 'Custom'
+          }
+        ],
+        customProductInput: ''
+      }));
+    };
+
+    const totalSelectedValue = (formData.selectedProducts || []).reduce((sum, p) => sum + (Number(p.sellingPrice) || 0), 0);
+
+    return (
+      <div className="space-y-3 p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-800 gap-1.5">
+          <div>
+            <label className="block text-xs font-bold text-white flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5 text-brand-400" />
+              Interested Products & Customer Offered Rates
+            </label>
+            <p className="text-[11px] text-slate-400">
+              Select products from database catalog. Specify customer offered rates to power the AI Margin Guard.
+            </p>
+          </div>
+          <span className="text-[11px] text-emerald-400 font-mono font-bold self-start sm:self-auto px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+            {(formData.selectedProducts || []).length} Selected {totalSelectedValue > 0 ? `(₹${totalSelectedValue.toLocaleString()})` : ''}
+          </span>
+        </div>
+
+        {/* Selected Products Deck */}
+        {(formData.selectedProducts || []).length > 0 && (
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              Selected Products (Catalog Price & Customer Offer):
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {formData.selectedProducts.map((p, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/80 border border-brand-500/30 text-xs text-white"
+                >
+                  <div className="min-w-0 pr-1">
+                    <span className="font-semibold text-slate-100 truncate block max-w-[140px]" title={p.name}>
+                      {p.name}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      Catalog: ₹{Number(p.sellingPrice || 0).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-1 rounded-lg border border-slate-700">
+                      <span className="text-[10px] text-amber-300 font-bold uppercase">Offer: ₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Offer ₹"
+                        value={p.offeredPrice !== undefined ? p.offeredPrice : ''}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? '' : Number(e.target.value);
+                          const updated = [...formData.selectedProducts];
+                          updated[idx] = { ...updated[idx], offeredPrice: val };
+                          setFormData({ ...formData, selectedProducts: updated });
+                        }}
+                        className="w-20 px-1 py-0.5 text-xs font-mono bg-transparent text-emerald-300 font-bold focus:outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removeSelected(idx)}
+                      className="p-1 text-slate-400 hover:text-rose-400 rounded-md transition-colors"
+                      title="Remove item"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Catalog Search & Dropdown Picker */}
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search available products from database by name, category, or SKU..."
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              className="glass-input block w-full pl-9 pr-3 py-2 text-xs rounded-xl"
+            />
+          </div>
+
+          <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/70 p-1.5 space-y-1 divide-y divide-slate-850">
+            {availableProducts.length === 0 ? (
+              <p className="text-xs text-slate-500 italic p-3 text-center">
+                No products found in database catalog. Add products in Catalog first or add custom unlisted product below.
+              </p>
+            ) : filteredAvailable.length === 0 ? (
+              <p className="text-xs text-slate-500 italic p-3 text-center">
+                No catalog products matching "{productSearch}".
+              </p>
+            ) : (
+              filteredAvailable.map((prod) => {
+                const selected = isSelected(prod.id, prod.name);
+                return (
+                  <div
+                    key={prod.id}
+                    onClick={() => toggleProduct(prod)}
+                    className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-colors ${
+                      selected
+                        ? 'bg-brand-600/20 border border-brand-500/40'
+                        : 'hover:bg-slate-900 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                      <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
+                        selected ? 'bg-brand-600 border-brand-500 text-white' : 'border-slate-700 bg-slate-900'
+                      }`}>
+                        {selected && <Check className="w-3 h-3" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-200 truncate">{prod.name}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {prod.category} {prod.sku ? `• SKU: ${prod.sku}` : ''} {prod.stock ? `• Stock: ${prod.stock}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right flex-shrink-0">
+                      <span className="font-mono font-bold text-emerald-400 text-xs">
+                        ₹{Number(prod.targetPrice || prod.preferredMinPrice || 0).toLocaleString()}
+                      </span>
+                      <span className="text-[9px] text-slate-500 block">Selling Price</span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Custom Unlisted Product Input */}
+        <div className="pt-1.5 flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Or type custom product name not in catalog..."
+            value={formData.customProductInput || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, customProductInput: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddCustom();
+              }
+            }}
+            className="glass-input block flex-1 px-3 py-1.5 text-xs rounded-xl"
+          />
+          <button
+            type="button"
+            onClick={handleAddCustom}
+            className="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition-colors flex-shrink-0"
+          >
+            + Add Custom
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800/80 gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
-              <Users className="w-6 h-6 text-brand-400" />
-              Customers & Wholesale Accounts
-            </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-              {customers.length} Accounts
-            </span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
+              <Users className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+                Customer & Lead Accounts
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Wholesale buyer profiles, purchase budgets, and multi-turn negotiation history
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Manage buyer profiles, credit preferences, order inquiries, and trigger WhatsApp negotiations.
-          </p>
         </div>
 
         <button
           onClick={handleOpenAdd}
-          className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 rounded-xl shadow-lg shadow-brand-500/25 transition-all hover:scale-105"
+          className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-brand-600 via-indigo-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 rounded-xl shadow-lg shadow-brand-500/25 transition-all hover:scale-[1.02]"
         >
           <Plus className="w-4 h-4" />
-          Add Customer
+          <span>Add Customer</span>
         </button>
+      </div>
+
+      {/* Customer Directory Metrics Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Accounts</span>
+            <span className="text-xl font-black text-white font-mono">{customers.length}</span>
+          </div>
+          <div className="w-8 h-8 rounded-xl bg-brand-500/10 flex items-center justify-center text-brand-400">
+            <Users className="w-4 h-4" />
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active Leads</span>
+            <span className="text-xl font-black text-amber-300 font-mono">{activeLeadsCount}</span>
+          </div>
+          <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
+            <Tag className="w-4 h-4" />
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Closed Won</span>
+            <span className="text-xl font-black text-emerald-400 font-mono">{closedWonCount}</span>
+          </div>
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+        </div>
+
+        <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pipeline Budget</span>
+            <span className="text-xl font-black text-white font-mono">₹{totalBudget.toLocaleString()}</span>
+          </div>
+          <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+            <DollarSign className="w-4 h-4" />
+          </div>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -303,25 +712,57 @@ export const CustomersPage = () => {
             placeholder="Search by name, company, phone, or email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="glass-input block w-full pl-10 pr-4 py-2 text-xs rounded-xl"
+            className="glass-input block w-full pl-10 pr-4 py-2.5 text-xs rounded-xl"
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          <span className="text-xs text-slate-400 flex items-center gap-1 flex-shrink-0">
-            <Filter className="w-3.5 h-3.5" /> Lead Status:
-          </span>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="glass-input px-3 py-2 text-xs rounded-xl bg-slate-900 border-slate-700 text-slate-200"
-          >
-            {statuses.map((status) => (
-              <option key={status} value={status} className="bg-slate-900 text-white">
-                {status}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 flex items-center gap-1 flex-shrink-0">
+              <Filter className="w-3.5 h-3.5" /> Lead Status:
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="glass-input px-3 py-2 text-xs rounded-xl bg-slate-900 border-slate-700 text-slate-200"
+            >
+              {statuses.map((status) => (
+                <option key={status} value={status} className="bg-slate-900 text-white">
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* View Mode Toggle: Cards vs Table with Dedicated Column */}
+          <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                viewMode === 'cards'
+                  ? 'bg-brand-600 text-white shadow-md shadow-brand-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Card Grid View"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                viewMode === 'table'
+                  ? 'bg-brand-600 text-white shadow-md shadow-brand-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Table View with Interested Products & Selling Price Column"
+            >
+              <Table className="w-3.5 h-3.5" />
+              <span>Table</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -332,148 +773,357 @@ export const CustomersPage = () => {
           <p className="text-xs">Loading customer directory...</p>
         </div>
       ) : customers.length === 0 ? (
-        <div className="glass-panel p-12 rounded-2xl text-center max-w-md mx-auto my-8 border border-slate-800">
-          <Users className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-white mb-1">No customers found</h3>
-          <p className="text-xs text-slate-400 mb-5">
+        <div className="glass-panel p-12 rounded-3xl text-center max-w-lg mx-auto my-8 border border-slate-800">
+          <div className="w-16 h-16 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 mx-auto mb-4">
+            <Users className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1.5">No customers in directory</h3>
+          <p className="text-xs text-slate-400 mb-6 max-w-sm mx-auto leading-relaxed">
             {search || statusFilter !== 'All'
               ? 'Try adjusting your search query or status filter.'
-              : 'Add your first customer account to begin negotiations.'}
+              : 'Add your first wholesale buyer or retail merchant to start pricing negotiations.'}
           </p>
           <button
             onClick={handleOpenAdd}
-            className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white rounded-xl transition-all"
+            className="px-5 py-2.5 text-xs font-bold bg-gradient-to-r from-brand-600 via-indigo-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white rounded-xl shadow-lg shadow-brand-500/25 transition-all"
           >
-            Add Customer
+            + Add Customer Account
           </button>
         </div>
+      ) : viewMode === 'table' ? (
+        /* TABLE VIEW WITH DEDICATED COLUMN: Interested Products & Selling Price */
+        <div className="glass-panel rounded-3xl border border-slate-800/80 overflow-hidden shadow-2xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="py-3.5 px-4">Customer & Merchant</th>
+                  <th className="py-3.5 px-4">Contact</th>
+                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4">Budget</th>
+                  <th className="py-3.5 px-4 min-w-[320px]">
+                    <div className="flex items-center gap-1.5 text-brand-300 font-black">
+                      <Package className="w-3.5 h-3.5 text-brand-400" />
+                      Interested Products & Selling Price
+                    </div>
+                  </th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {customers.map((customer) => {
+                  const initials = customer.name
+                    ? customer.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+                    : 'CU';
+
+                  return (
+                    <tr key={customer.id} className="hover:bg-slate-900/40 transition-colors group">
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-sm flex-shrink-0">
+                            {initials}
+                          </div>
+                          <div>
+                            <p className="font-bold text-white group-hover:text-brand-300 transition-colors">
+                              {customer.name}
+                            </p>
+                            {customer.company && (
+                              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                <Building2 className="w-3 h-3 text-slate-500" /> {customer.company}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="space-y-1">
+                          <p className="text-slate-300 font-mono flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-slate-500" /> {customer.phone || 'No phone recorded'}
+                          </p>
+                          <p className="text-slate-400 truncate max-w-[150px] flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-slate-500" /> {customer.email || 'No email'}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full border ${getStatusBadge(customer.leadStatus)}`}>
+                          {customer.leadStatus}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 font-mono font-bold text-emerald-400 text-xs">
+                        ₹{Number(customer.budget || 0).toLocaleString()}
+                      </td>
+
+                      {/* DEDICATED COLUMN: Interested Products with Selling Prices */}
+                      <td className="py-4 px-4">
+                        {(!customer.interestedProducts || customer.interestedProducts.length === 0) ? (
+                          <span className="text-slate-500 italic text-[11px]">No products selected</span>
+                        ) : (
+                          <div className="space-y-1.5 max-w-sm">
+                            {customer.interestedProducts.map((prod, idx) => {
+                              const pInfo = resolveProductInfo(prod);
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-slate-700 text-xs transition-colors"
+                                >
+                                  <div className="min-w-0 pr-2">
+                                    <span className="font-medium text-slate-200 truncate block max-w-[180px]" title={pInfo.name}>
+                                      {pInfo.name}
+                                    </span>
+                                    {pInfo.sku && <span className="text-[9px] text-slate-500 font-mono">SKU: {pInfo.sku}</span>}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    <div className="flex flex-col items-end">
+                                      {pInfo.offeredPrice > 0 && (
+                                        <span className="font-mono font-bold text-amber-300 text-[11px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20" title="Customer Offered Price">
+                                          Offer: ₹{pInfo.offeredPrice.toLocaleString()}
+                                        </span>
+                                      )}
+                                      <span className="font-mono text-slate-400 text-[10px]" title="Catalog Selling Price">
+                                        Catalog: {pInfo.sellingPrice > 0 ? `₹${pInfo.sellingPrice.toLocaleString()}` : 'Custom'}
+                                      </span>
+                                    </div>
+                                    <button
+                                      onClick={() => navigate(`/negotiations?customerId=${customer.id}${pInfo.id ? `&productId=${pInfo.id}` : ''}`)}
+                                      className="text-[10px] text-brand-400 hover:text-brand-300 font-bold px-1.5 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 transition-colors"
+                                      title="Open Deal Desk Quote"
+                                    >
+                                      Quote →
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => navigate(`/negotiations?customerId=${customer.id}`)}
+                            className="px-2.5 py-1 text-xs font-bold text-white bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 rounded-lg shadow-sm transition-all"
+                            title="Start Negotiation"
+                          >
+                            Quote
+                          </button>
+                          <button
+                            onClick={() => navigate(`/conversations?customerId=${customer.id}`)}
+                            className="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 rounded-lg transition-colors"
+                            title="WhatsApp Chat"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenView(customer)}
+                            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                            title="View Customer Profile"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenEdit(customer)}
+                            className="p-1.5 text-slate-400 hover:text-brand-300 hover:bg-slate-800 rounded-lg transition-colors"
+                            title="Edit Customer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenDelete(customer)}
+                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                            title="Delete Customer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
+        /* CARDS GRID VIEW WITH DEDICATED INTERESTED PRODUCTS & SELLING PRICE SECTION */
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {customers.map((customer) => (
-            <div
-              key={customer.id}
-              className="glass-panel p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between"
-            >
-              <div>
-                {/* Header row */}
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div>
-                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                      {customer.name}
-                    </h3>
-                    {customer.company && (
-                      <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
-                        <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                        {customer.company}
-                      </p>
+          {customers.map((customer) => {
+            const initials = customer.name
+              ? customer.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+              : 'CU';
+
+            return (
+              <div
+                key={customer.id}
+                className="glass-panel p-6 rounded-3xl border border-slate-800/80 hover:border-slate-700 transition-all duration-300 flex flex-col justify-between group relative overflow-hidden"
+              >
+                <div>
+                  {/* Header row with Avatar & Status */}
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-purple-600 flex items-center justify-center font-black text-white text-base shadow-md shadow-brand-500/20 flex-shrink-0">
+                        {initials}
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-white group-hover:text-brand-300 transition-colors">
+                          {customer.name}
+                        </h3>
+                        {customer.company && (
+                          <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
+                            <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                            {customer.company}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <span className={`px-2.5 py-1 text-[11px] font-bold rounded-full border ${getStatusBadge(customer.leadStatus)}`}>
+                      {customer.leadStatus}
+                    </span>
+                  </div>
+
+                  {/* Contact & Budget grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800/80 mb-3.5">
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <Phone className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                      <span className="font-mono">{customer.phone || 'No phone recorded'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                      <span className="truncate">{customer.email || 'No email'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-300 sm:col-span-2 pt-1 border-t border-slate-800/60 mt-0.5">
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                      <span>Budget: <strong className="font-mono text-emerald-400 font-bold">₹{Number(customer.budget || 0).toLocaleString()}</strong></span>
+                    </div>
+                  </div>
+
+                  {/* Dedicated Interested Products & Database Selling Price Section */}
+                  <div className="mb-3.5 bg-slate-900/90 rounded-2xl p-3 border border-slate-800/80">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      <span className="flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5 text-brand-400" />
+                        Interested Products & Selling Price
+                      </span>
+                      <span className="text-emerald-400 font-mono text-[10px]">
+                        {customer.interestedProducts?.length || 0} Listed
+                      </span>
+                    </div>
+
+                    {(!customer.interestedProducts || customer.interestedProducts.length === 0) ? (
+                      <p className="text-[11px] text-slate-500 italic py-1">No interested products recorded</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {customer.interestedProducts.map((prod, idx) => {
+                          const pInfo = resolveProductInfo(prod);
+                          return (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-slate-700 transition-colors"
+                            >
+                              <div className="min-w-0 pr-2">
+                                <span className="font-medium text-slate-200 truncate block max-w-[200px]" title={pInfo.name}>
+                                  {pInfo.name}
+                                </span>
+                                {pInfo.sku && <span className="text-[9px] text-slate-500 font-mono">SKU: {pInfo.sku}</span>}
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="flex flex-col items-end">
+                                  {pInfo.offeredPrice > 0 && (
+                                    <span className="font-mono font-bold text-amber-300 text-[11px] px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20" title="Customer Offered Price">
+                                      Offer: ₹{pInfo.offeredPrice.toLocaleString()}
+                                    </span>
+                                  )}
+                                  <span className="font-mono text-slate-400 text-[10px]" title="Catalog Selling Price">
+                                    Catalog: {pInfo.sellingPrice > 0 ? `₹${pInfo.sellingPrice.toLocaleString()}` : 'Custom'}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => navigate(`/negotiations?customerId=${customer.id}${pInfo.id ? `&productId=${pInfo.id}` : ''}`)}
+                                  className="text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors px-1.5 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30"
+                                  title="Open Deal Desk Quote"
+                                >
+                                  Quote →
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
 
-                  <span className={`px-2.5 py-1 text-[11px] font-bold rounded-full border ${getStatusBadge(customer.leadStatus)}`}>
-                    {customer.leadStatus}
-                  </span>
+                  {/* Notes preview */}
+                  {customer.notes && (
+                    <p className="text-xs text-slate-400 line-clamp-2 italic mb-4 bg-slate-950/40 p-3 rounded-xl border border-slate-800/60">
+                      "{customer.notes}"
+                    </p>
+                  )}
                 </div>
 
-                {/* Contact & Budget grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 mb-3.5">
-                  <div className="flex items-center gap-2 text-slate-300">
-                    <Phone className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                    <span>{customer.phone || 'No phone recorded'}</span>
+                {/* Action buttons strip */}
+                <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {/* Start negotiation */}
+                    <button
+                      onClick={() => navigate(`/negotiations?customerId=${customer.id}`)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 rounded-xl shadow-md shadow-brand-500/20 transition-all hover:scale-[1.02]"
+                      title="Start Negotiation"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Negotiate</span>
+                    </button>
+
+                    {/* Send WhatsApp */}
+                    <button
+                      onClick={() => navigate(`/conversations?customerId=${customer.id}`)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600/15 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl transition-all"
+                      title="Open WhatsApp Chat"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>WhatsApp</span>
+                    </button>
+
+                    {/* Schedule Followup */}
+                    <button
+                      onClick={() => handleOpenReminder(customer)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors border border-slate-700/80"
+                      title="Schedule Reminder"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Follow-up</span>
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2 text-slate-300">
-                    <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                    <span className="truncate">{customer.email || 'No email'}</span>
+
+                  {/* Standard edit / view / delete */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenView(customer)}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+                      title="View Customer"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenEdit(customer)}
+                      className="p-1.5 text-slate-400 hover:text-brand-300 hover:bg-slate-800 rounded-xl transition-colors"
+                      title="Edit Customer"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenDelete(customer)}
+                      className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition-colors"
+                      title="Delete Customer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2 text-slate-300 sm:col-span-2">
-                    <DollarSign className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                    <span>Estimated Budget: <strong className="font-mono text-emerald-400">₹{Number(customer.budget).toLocaleString()}</strong></span>
-                  </div>
-                </div>
-
-                {/* Interested products tags */}
-                {customer.interestedProducts && customer.interestedProducts.length > 0 && (
-                  <div className="mb-3.5 flex flex-wrap gap-1.5 items-center">
-                    <span className="text-[10px] text-slate-500 font-semibold uppercase mr-1">Products:</span>
-                    {customer.interestedProducts.map((prod, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-0.5 text-[10px] bg-brand-500/10 text-brand-300 border border-brand-500/20 rounded-md font-medium"
-                      >
-                        {prod}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Notes preview */}
-                {customer.notes && (
-                  <p className="text-xs text-slate-400 line-clamp-2 italic mb-4 bg-slate-900/40 p-2.5 rounded-lg border border-slate-800/60">
-                    "{customer.notes}"
-                  </p>
-                )}
-              </div>
-
-              {/* Action buttons strip */}
-              <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  {/* Start negotiation */}
-                  <button
-                    onClick={() => navigate(`/negotiations?customerId=${customer.id}`)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-brand-600/30 hover:bg-brand-600/50 text-brand-200 border border-brand-500/30 rounded-lg transition-colors"
-                    title="Start Negotiation"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-brand-400" />
-                    Negotiate
-                  </button>
-
-                  {/* Send WhatsApp */}
-                  <button
-                    onClick={() => navigate(`/conversations?customerId=${customer.id}`)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/30 rounded-lg transition-colors"
-                    title="Open WhatsApp Chat"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-                    WhatsApp
-                  </button>
-
-                  {/* Schedule Followup */}
-                  <button
-                    onClick={() => handleOpenReminder(customer)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
-                    title="Schedule Reminder"
-                  >
-                    <Calendar className="w-3.5 h-3.5 text-amber-400" />
-                    Follow-up
-                  </button>
-                </div>
-
-                {/* Standard edit / view / delete */}
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleOpenView(customer)}
-                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                    title="View Customer"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleOpenEdit(customer)}
-                    className="p-1.5 text-slate-400 hover:text-brand-300 hover:bg-slate-800 rounded-lg transition-colors"
-                    title="Edit Customer"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleOpenDelete(customer)}
-                    className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                    title="Delete Customer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -499,28 +1149,16 @@ export const CustomersPage = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Customer / Contact Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Ramesh Chandra"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="glass-input block w-full px-3 py-2 text-xs rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Company / Retail Store</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Chandra Electronics Surat"
-                    value={formData.company}
-                    onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                    className="glass-input block w-full px-3 py-2 text-xs rounded-xl"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Customer / Contact Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ramesh Chandra"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="glass-input block w-full px-3 py-2 text-xs rounded-xl"
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -546,64 +1184,20 @@ export const CustomersPage = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Estimated Budget (INR ₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 500000"
-                    value={formData.budget}
-                    onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                    className="glass-input block w-full px-3 py-2 text-xs rounded-xl font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Lead Status</label>
-                  <select
-                    value={formData.leadStatus}
-                    onChange={(e) => setFormData({ ...formData, leadStatus: e.target.value })}
-                    className="glass-input block w-full px-3 py-2 text-xs rounded-xl bg-slate-900 border-slate-700 text-white"
-                  >
-                    {statuses.filter(s => s !== 'All').map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Interested Products (comma separated)</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Customer Offered Price / Budget (INR ₹)</label>
                 <input
-                  type="text"
-                  placeholder="e.g. Samsung 65 Neo QLED, Daikin 1.5T AC"
-                  value={formData.interestedProductsInput}
-                  onChange={(e) => setFormData({ ...formData, interestedProductsInput: e.target.value })}
-                  className="glass-input block w-full px-3 py-2 text-xs rounded-xl"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 86500"
+                  value={formData.budget}
+                  onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                  className="glass-input block w-full px-3 py-2 text-xs rounded-xl font-mono"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Wholesale Preferences & Terms</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 15-day credit terms, expects free transit insurance, GST billing"
-                  value={formData.preferences}
-                  onChange={(e) => setFormData({ ...formData, preferences: e.target.value })}
-                  className="glass-input block w-full px-3 py-2 text-xs rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Internal Notes & Context</label>
-                <textarea
-                  rows="2"
-                  placeholder="Deal background, negotiation stance, decision maker details..."
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="glass-input block w-full px-3 py-2 text-xs rounded-xl"
-                />
-              </div>
+              {/* Interactive Product Selector from Database with Selling Prices */}
+              {renderProductSelector()}
 
               <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
                 <button
@@ -694,10 +1288,11 @@ export const CustomersPage = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Estimated Budget (INR ₹)</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Customer Offered Price / Budget (INR ₹)</label>
                   <input
                     type="number"
                     min="0"
+                    placeholder="e.g. 86500"
                     value={formData.budget}
                     onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
                     className="glass-input block w-full px-3 py-2 text-xs rounded-xl font-mono"
@@ -717,15 +1312,8 @@ export const CustomersPage = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Interested Products (comma separated)</label>
-                <input
-                  type="text"
-                  value={formData.interestedProductsInput}
-                  onChange={(e) => setFormData({ ...formData, interestedProductsInput: e.target.value })}
-                  className="glass-input block w-full px-3 py-2 text-xs rounded-xl"
-                />
-              </div>
+              {/* Interactive Product Selector from Database with Selling Prices */}
+              {renderProductSelector()}
 
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Wholesale Preferences & Terms</label>
@@ -823,16 +1411,44 @@ export const CustomersPage = () => {
                   </div>
                 )}
 
-                {/* Interested Products */}
+                {/* Interested Products with Catalog Selling Prices */}
                 {customerDetails?.interestedProducts && customerDetails.interestedProducts.length > 0 && (
-                  <div className="text-xs">
-                    <strong className="text-slate-400 block mb-1.5">Interested Product Lines:</strong>
-                    <div className="flex flex-wrap gap-1.5">
-                      {customerDetails.interestedProducts.map((p, i) => (
-                        <span key={i} className="px-2.5 py-1 rounded-md bg-brand-500/10 text-brand-300 border border-brand-500/20 text-xs">
-                          {p}
-                        </span>
-                      ))}
+                  <div className="text-xs space-y-2">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                      <strong className="text-slate-300 flex items-center gap-1.5 font-bold">
+                        <Package className="w-3.5 h-3.5 text-brand-400" />
+                        Interested Products & Catalog Selling Price:
+                      </strong>
+                      <span className="text-[11px] text-emerald-400 font-mono">
+                        {customerDetails.interestedProducts.length} items
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {customerDetails.interestedProducts.map((p, i) => {
+                        const pInfo = resolveProductInfo(p);
+                        return (
+                          <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
+                            <div className="min-w-0 pr-2">
+                              <p className="font-semibold text-white truncate">{pInfo.name}</p>
+                              {pInfo.sku && <p className="text-[10px] text-slate-500 font-mono">SKU: {pInfo.sku}</p>}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="font-mono font-bold text-emerald-400 text-xs px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                {pInfo.sellingPrice > 0 ? `₹${pInfo.sellingPrice.toLocaleString()}` : 'Custom Rate'}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  setIsViewModalOpen(false);
+                                  navigate(`/negotiations?customerId=${customerDetails.id}${pInfo.id ? `&productId=${pInfo.id}` : ''}`);
+                                }}
+                                className="text-[11px] font-bold text-brand-300 hover:text-white px-2.5 py-1 rounded-lg bg-brand-600/30 hover:bg-brand-600/50 border border-brand-500/40 transition-colors"
+                              >
+                                Deal Desk →
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

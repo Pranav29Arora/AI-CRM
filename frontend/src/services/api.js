@@ -11,14 +11,35 @@ import { auth } from '../config/firebase.js';
 
 const BASE_URL = '/api';
 
-export async function apiRequest(endpoint, options = {}, isRetry = false) {
-  let token = localStorage.getItem('aicrm_token');
+function getActiveToken() {
+  return sessionStorage.getItem('aicrm_token') || localStorage.getItem('aicrm_token');
+}
 
-  // If Firebase user is active, synchronize token (Firebase automatically handles caching and refresh)
+function saveActiveToken(token) {
+  if (!token) return;
+  sessionStorage.setItem('aicrm_token', token);
+  if (localStorage.getItem('aicrm_remember_me') === 'true') {
+    localStorage.setItem('aicrm_token', token);
+  }
+}
+
+export async function apiRequest(endpoint, options = {}, isRetry = false) {
+  // If Firebase auth is still initializing, wait for it to be ready
+  if (!auth?.currentUser && typeof auth?.authStateReady === 'function') {
+    try {
+      await auth.authStateReady();
+    } catch {
+      // Continue with stored token if state check fails
+    }
+  }
+
+  let token = getActiveToken();
+
+  // If Firebase user is active, synchronize token
   if (auth?.currentUser) {
     try {
       token = await auth.currentUser.getIdToken(false);
-      localStorage.setItem('aicrm_token', token);
+      saveActiveToken(token);
     } catch (tokenErr) {
       // Continue with stored token if silent refresh fails
     }
@@ -45,7 +66,7 @@ export async function apiRequest(endpoint, options = {}, isRetry = false) {
         console.warn(`[API Interceptor] 401 received on ${endpoint}. Refreshing Firebase token and retrying...`);
         try {
           const freshToken = await auth.currentUser.getIdToken(true);
-          localStorage.setItem('aicrm_token', freshToken);
+          saveActiveToken(freshToken);
           return await apiRequest(endpoint, options, true);
         } catch (refreshErr) {
           console.error('[API Token Refresh Failed]:', refreshErr);

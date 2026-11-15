@@ -120,7 +120,7 @@ class AuthService {
       throw err;
     }
 
-    const newUser = dataService.createUser({
+    const newUser = await dataService.createUser({
       name: name.trim(),
       email: email.trim().toLowerCase(),
       password: password.trim(),
@@ -166,12 +166,7 @@ class AuthService {
   }
 
   getDemoCredentials() {
-    return {
-      email: "demo@aicrm.com",
-      password: "demo123",
-      role: "Wholesale & Retail Director",
-      description: "Pre-configured account with existing product catalog, customers, and active negotiations."
-    };
+    return null;
   }
 }
 
