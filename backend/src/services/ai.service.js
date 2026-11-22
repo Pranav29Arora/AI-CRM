@@ -320,13 +320,15 @@ STRICT BUSINESS & PRICING RULES:
 3. Customer: ${customerName} (${customerCompany})
 4. Quantity: ${quantity} units
 5. Customer's current offer: ₹${offer.toLocaleString()}
-6. Official target price: ₹${target.toLocaleString()}
-7. Suggested counter price: ₹${counterPrice.toLocaleString()}
+6. Official target catalog price: ₹${target.toLocaleString()}
+7. Suggested counter price to quote: ₹${counterPrice.toLocaleString()}
 8. Absolute lower floor: ₹${floor.toLocaleString()} (DO NOT MENTION COST OR FLOOR NUMBERS DIRECTLY).
-9. Rule compliance:
-   - If REJECT: Politely but firmly reject the price. Explain landed cost/factory tier. Never accept below floor.
-   - If COUNTER: Politely counter at ₹${counterPrice.toLocaleString()} (pushing as close to target catalog rate ₹${target.toLocaleString()} as possible to generate maximum profit). Do not surrender margin on early rounds. Highlight genuine warranty, GST invoice, quick warehouse dispatch, and trade value.
-   - If ACCEPT: Enthusiastically confirm approval, reserve inventory, and ask for billing confirmation.
+9. Commercial negotiation strategy:
+   - If REJECT: Politely but firmly reject the price. Explain that this price violates authorized distributor minimums. Counter at ₹${counterPrice.toLocaleString()}.
+   - If COUNTER:
+     * If counter price equals target catalog price (₹${target.toLocaleString()}): Firmly anchor at the exact target rate ₹${target.toLocaleString()}. DO NOT give any discount on early attempts. Emphasize 100% genuine factory warranty, full GST input invoice, priority warehouse loading, and trade credibility.
+     * If counter price is below target price (₹${counterPrice.toLocaleString()}): Concede minimally, explaining that we are extending a special commercial concession to ₹${counterPrice.toLocaleString()} to support our partnership while strictly retaining our wholesale margin. Emphasize value.
+   - If ACCEPT: Enthusiastically confirm approval at ₹${offer.toLocaleString()}, reserve inventory, and ask for billing details for pro-forma issuance.
 
 Requested Primary Tone: ${tone.toUpperCase()}
 Tone options meaning:
@@ -396,20 +398,35 @@ Provide your response in valid JSON with these fields:
       ];
     } else if (recommendation === 'COUNTER') {
       winProbability = 68;
-      if (tone === 'assertive') {
-        primaryReply = `Dear ${customerFirstName} ji, thank you for your offer of ₹${offer.toLocaleString()} on ${quantity} units of ${product.name}. To maintain genuine distribution backing and transit insurance, we can meet you at ₹${counterPrice.toLocaleString()} per unit. Please confirm so we can allocate stock.`;
-      } else if (tone === 'urgent') {
-        primaryReply = `Namaste ${customerFirstName} ji, our warehouse is dispatching this afternoon's shipment. If we finalize ₹${counterPrice.toLocaleString()} for your ${quantity} units of ${product.name} within the next hour, I will ensure immediate loading and priority delivery.`;
-      } else if (tone === 'hinglish') {
-        primaryReply = `Namaste ${customerFirstName} ji, aapka offer dekha. Business relationship ko dekhte hue hum is deal ko ₹${counterPrice.toLocaleString()} per unit pe lock kar sakte hain. Stock ready hai central warehouse me, turant dispatch nikalwa denge.`;
+      const isTargetQuote = counterPrice >= target;
+      if (isTargetQuote) {
+        if (tone === 'assertive') {
+          primaryReply = `Dear ${customerFirstName} ji, thank you for your offer of ₹${offer.toLocaleString()} on ${quantity} units of ${product.name}. Our official wholesale catalog rate is ₹${target.toLocaleString()} per unit. All units carry genuine manufacturer warranty, 100% GST input billing, and factory seal. We invite you to confirm your allocation at ₹${target.toLocaleString()}.`;
+        } else if (tone === 'urgent') {
+          primaryReply = `Namaste ${customerFirstName} ji, stock for ${product.name} is moving fast through our central hub. Our official catalog rate is ₹${target.toLocaleString()} per unit with same-day loading. Confirm at ₹${target.toLocaleString()} today so we can secure your consignment immediately.`;
+        } else if (tone === 'hinglish') {
+          primaryReply = `Namaste ${customerFirstName} ji, aapka ₹${offer.toLocaleString()} ka offer mila. Lekin ${product.name} ka official wholesale rate ₹${target.toLocaleString()} per unit chal raha hai with 100% GST bill aur brand warranty. Ready stock hai, ₹${target.toLocaleString()} pe confirm kijiye taaki turant dispatch nikalwa sakein.`;
+        } else {
+          primaryReply = `Namaste ${customerFirstName} ji, thank you for reaching out regarding ${quantity} units of ${product.name}. Our authorized distributor catalog rate is ₹${target.toLocaleString()} per unit with full brand warranty and priority warehouse dispatch. Let us finalize this lot at ₹${target.toLocaleString()} and dispatch today!`;
+        }
       } else {
-        primaryReply = `Namaste ${customerFirstName} ji, we appreciate your continued business. While ₹${offer.toLocaleString()} is slightly tight against our factory tier, we can close this lot immediately at ₹${counterPrice.toLocaleString()} per unit with full GST invoice and express dispatch. Let me know if we can lock this in today.`;
+        if (tone === 'assertive') {
+          primaryReply = `Dear ${customerFirstName} ji, regarding your offer of ₹${offer.toLocaleString()} on ${quantity} units of ${product.name}: to support our business relationship, we can make a special commercial concession and meet you at ₹${counterPrice.toLocaleString()} per unit. This includes full factory warranty and 100% GST billing.`;
+        } else if (tone === 'urgent') {
+          primaryReply = `Namaste ${customerFirstName} ji, our warehouse is preparing dispatch. To close this deal today, we can offer an exclusive counter of ₹${counterPrice.toLocaleString()} per unit for your ${quantity} units of ${product.name} if confirmed within the hour.`;
+        } else if (tone === 'hinglish') {
+          primaryReply = `Namaste ${customerFirstName} ji, aapke sath long-term business dekh kar hum special concession dete hue deal ₹${counterPrice.toLocaleString()} per unit pe close karne ko taiyar hain. Full GST bill aur factory warranty milegi. Bataiye invoice bhej dein?`;
+        } else {
+          primaryReply = `Namaste ${customerFirstName} ji, we appreciate your continued business. While ₹${offer.toLocaleString()} is below our standard wholesale margin corridor, we value our partnership and can extend a special dealer concession to ₹${counterPrice.toLocaleString()} per unit. Shall I generate the pro-forma invoice at this rate?`;
+        }
       }
 
       altA = `Namaste ${customerFirstName} ji, let us close at ₹${counterPrice.toLocaleString()} per unit. We will include complimentary transit insurance and priority warehouse batching.`;
       altB = `Dear ${customerFirstName} ji, counter-offering ₹${counterPrice.toLocaleString()} per unit for ${quantity} pcs of ${product.name}. If approved today, dispatched first thing tomorrow morning.`;
       tactics = [
-        `Counter at ₹${counterPrice.toLocaleString()} to preserve gross profit of ₹${evaluation.metrics.grossProfit.toLocaleString()}.`,
+        isTargetQuote
+          ? `Anchor firmly at exact target catalog rate of ₹${target.toLocaleString()} to capture maximum profit.`
+          : `Counter at ₹${counterPrice.toLocaleString()} (strictly retaining majority of surplus above customer offer).`,
         `Highlight fast dispatch and genuine brand warranty as value additions.`,
         `If buyer hesitates, offer 30-day payment term or 50% advance incentive.`
       ];
@@ -665,14 +682,15 @@ Return ONLY a valid JSON object in this exact format:
     let lowestPreviousQuote = target;
     for (const msg of threadMessages) {
       if (msg.sender === 'salesperson' || msg.sender === 'assistant' || msg.isAiGenerated) {
-        const matches = (msg.text || '').match(/₹\s*([0-9,]+)/g);
-        if (matches) {
-          for (const m of matches) {
-            const num = Number(m.replace(/[^0-9]/g, ''));
-            if (num >= floor && num <= target + 5000) {
-              if (num < lowestPreviousQuote) {
-                lowestPreviousQuote = num;
-              }
+        const text = msg.text || '';
+        // Match phrases where salesperson actually quoted their rate/counter/offer
+        // e.g. "rate is ₹X", "counter... ₹X", "meet you at ₹X", "can offer is ₹X", "quote is ₹X", "at ₹X per unit"
+        const quotedMatches = [...text.matchAll(/(?:rate|counter|price|quote|concession|meet you at|lock at|offer is|can offer is|allocation at|consignments? at|per unit at|rate of)\s*(?:is|of|a)?\s*₹\s*([0-9,]+)/gi)];
+        for (const m of quotedMatches) {
+          const num = Number(m[1].replace(/[^0-9]/g, ''));
+          if (num >= floor && num <= target + 5000) {
+            if (num < lowestPreviousQuote) {
+              lowestPreviousQuote = num;
             }
           }
         }
@@ -707,6 +725,8 @@ Return ONLY a valid JSON object in this exact format:
           .map(m => `${m.sender.toUpperCase()}: ${m.text}`)
           .join('\n');
 
+        const isTargetCounter = counterPrice >= target;
+
         const prompt = `You are an expert wholesale distributor sales agent in India negotiating on WhatsApp.
 Your job is to respond to the buyer's latest message while STRICTLY defending margin guardrails.
 
@@ -726,16 +746,18 @@ BUYER CONTEXT:
 RECENT CHAT TRANSCRIPT:
 ${transcript}
 
-GUARDRAIL ENFORCEMENT:
+GUARDRAIL ENFORCEMENT & COMMERCIAL STRATEGY:
 1. If recommendation is REJECT (offer is strictly below floor limit ₹${floor.toLocaleString('en-IN')}):
    - Politely but firmly reject the price. Explain that this price is below our authorized floor threshold. (Never claim it is below landed cost unless offer is literally below cost ₹${(product?.costPrice || floor).toLocaleString('en-IN')}).
    - Counter firmly at ₹${counterPrice.toLocaleString('en-IN')}.
    - Emphasize factory-sealed brand warranty, genuine GST input tax credit, and zero gray-market risk.
 2. If recommendation is COUNTER (offer is below target catalog price ₹${target.toLocaleString('en-IN')}):
-   - Acknowledge their position respectfully.
-   - Defend margin corridor: counter at ₹${counterPrice.toLocaleString('en-IN')} (never quote higher than previous distributor quotes; push as close to target catalog price as possible to maximize profit).
-   - If offer is below preferred tier ₹${pref.toLocaleString('en-IN')}, mention that ₹${evaluatedOffer.toLocaleString('en-IN')} is below our standard wholesale margin corridor, but DO NOT say it is below landed cost.
-   - Emphasize distributor value (official warranty, 100% GST invoice, immediate central warehouse allocation).
+   - Acknowledge their message respectfully.
+   ${isTargetCounter
+     ? `- MANDATORY RULE: The counter price to quote is our official target catalog price of ₹${target.toLocaleString('en-IN')}. Firmly defend this full rate. DO NOT give any discount on early attempts. Explain that ₹${target.toLocaleString('en-IN')} is our official authorized rate with 100% genuine factory warranty, compliant GST input tax credit, and priority hub dispatch. Ask if they can confirm at ₹${target.toLocaleString('en-IN')}.`
+     : `- MANDATORY RULE: Counter at EXACTLY ₹${counterPrice.toLocaleString('en-IN')}. Note that while their offer of ₹${evaluatedOffer.toLocaleString('en-IN')} is below our standard wholesale margin corridor, to support our business relationship, we are making a special commercial concession to meet them at ₹${counterPrice.toLocaleString('en-IN')} (retaining the majority of margin while granting a real concession). Emphasize full GST invoice and official brand warranty.`
+   }
+   - NEVER quote a price lower than ₹${counterPrice.toLocaleString('en-IN')} or higher than ₹${lowestPreviousQuote.toLocaleString('en-IN')}.
 3. If recommendation is ACCEPT and buyer explicitly confirms/accepts the deal:
    - Enthusiastically confirm at ₹${evaluatedOffer.toLocaleString('en-IN')}.
    - Request company GSTIN and billing address to issue official pro-forma invoice.
@@ -763,7 +785,7 @@ Return ONLY a valid JSON object:
               model: gen.model,
               replyText: parsed.replyText,
               intent: parsed.intent || detectedIntent,
-              tacticApplied: parsed.tacticApplied || 'Defended pricing corridor with authorized distribution value',
+              tacticApplied: parsed.tacticApplied || (isTargetCounter ? `Defended Official Catalog Target Rate (₹${target.toLocaleString('en-IN')})` : `Commercial Concession Counter (₹${counterPrice.toLocaleString('en-IN')})`),
               recommendation,
               counterPrice,
               marginProtected: true
@@ -800,8 +822,15 @@ Return ONLY a valid JSON object:
       replyText = `Namaste ${customerFirstName} ji, we fully respect market comparisons, but our stock carries direct manufacturer warranty, zero transit damage liability, and 100% compliant GST input tax credit. To respect our business relationship, we can meet you at ₹${counterPrice.toLocaleString('en-IN')}/unit for immediate dispatch.`;
     } else {
       // General Counter
-      tacticApplied = `Margin Corridor Counter-Quote (₹${counterPrice.toLocaleString('en-IN')})`;
-      replyText = `Namaste ${customerFirstName} ji, we appreciate your counter. However, ₹${evaluatedOffer.toLocaleString('en-IN')} is below our authorized distributor margin corridor for this model. Considering your volume of ${quantity} units, the best commercial rate we can offer is ₹${counterPrice.toLocaleString('en-IN')}/unit, complete with 100% GST input tax credit and full brand warranty. Shall we proceed at this price?`;
+      if (counterPrice >= target) {
+        tacticApplied = `Defended Official Catalog Target Rate (₹${target.toLocaleString('en-IN')})`;
+        replyText = `Namaste ${customerFirstName} ji, thank you for your offer of ₹${evaluatedOffer.toLocaleString('en-IN')}. However, our official authorized distributor catalog rate for ${productName} is ₹${target.toLocaleString('en-IN')} per unit. As an authorized distributor, all units come factory-sealed with full 100% GST input tax credit, direct manufacturer warranty, and same-day priority dispatch. Shall we proceed to book your consignment at ₹${target.toLocaleString('en-IN')}?`;
+      } else {
+        const retainedSurplus = counterPrice - evaluatedOffer;
+        const concessionGiven = target - counterPrice;
+        tacticApplied = `Commercial Concession Counter (₹${counterPrice.toLocaleString('en-IN')} - Retained ₹${retainedSurplus.toLocaleString('en-IN')} surplus above offer)`;
+        replyText = `Namaste ${customerFirstName} ji, we appreciate your continued interest. While ₹${evaluatedOffer.toLocaleString('en-IN')} is below our standard wholesale margin corridor, to support our business relationship, we can make a special commercial concession and meet you at ₹${counterPrice.toLocaleString('en-IN')}/unit with 100% GST invoice and official brand warranty. Shall I generate the pro-forma invoice at ₹${counterPrice.toLocaleString('en-IN')}?`;
+      }
     }
 
     return {

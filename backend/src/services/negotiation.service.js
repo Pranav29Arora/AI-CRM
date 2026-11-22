@@ -48,50 +48,60 @@ class NegotiationService {
     if (offer < floor) {
       recommendation = 'REJECT';
       canApprove = false;
-      // On Round 1, anchor high near target; on later rounds, hold at preferred
-      suggestedCounterPrice = round <= 1 
-        ? Math.round((pref + target * 2) / 3 / 100) * 100 
-        : pref;
-      reasoning = `Customer offer of ₹${offer.toLocaleString()} is strictly BELOW the absolute lower limit of ₹${floor.toLocaleString()} (Cost: ₹${cp.toLocaleString()}). Selling below the absolute floor will violate margin guardrails and risk negative profit. Firm rejection required.`;
+      // On Round 1, anchor firmly at exact target catalog rate; on later rounds, hold at preferred baseline
+      suggestedCounterPrice = round <= 1 ? target : pref;
+      reasoning = `Customer offer of ₹${offer.toLocaleString()} is strictly BELOW the absolute lower limit of ₹${floor.toLocaleString()} (Cost: ₹${cp.toLocaleString()}). Selling below absolute floor violates margin guardrails and risks negative profit. Firm rejection required.`;
     } else if (offer >= floor && offer < pref) {
       recommendation = 'COUNTER';
-      // Permitted to approve ONLY after multiple rounds if customer refuses to budge
-      canApprove = round >= 3;
+      // Permitted to approve ONLY after extensive rounds (Round 4+) if buyer stands firm above floor
+      canApprove = round >= 4;
       if (round <= 1) {
-        // Round 1: Counter aggressively close to target catalog price
-        suggestedCounterPrice = Math.round((pref + target) / 2 / 100) * 100;
+        // Round 1: Firmly anchor at the exact target catalog rate first
+        suggestedCounterPrice = target;
+        reasoning = `Customer offer of ₹${offer.toLocaleString()} is below preferred baseline of ₹${pref.toLocaleString()} (Gross Profit: ₹${metrics.grossProfit.toLocaleString()}, ${metrics.grossMargin}% margin). Round 1: Anchor firmly at exact target catalog rate of ₹${target.toLocaleString()} before considering concessions.`;
       } else if (round === 2) {
-        // Round 2: Hold preferred minimum
+        // Round 2: Defend margin corridor, retaining upper band above preferred
+        suggestedCounterPrice = Math.round((pref * 0.35 + target * 0.65) / 100) * 100;
+        reasoning = `Round 2: Customer persists below preferred baseline. Defend distributor margin by countering in upper corridor at ₹${suggestedCounterPrice.toLocaleString()}.`;
+      } else if (round === 3) {
+        // Round 3: Hold preferred baseline
         suggestedCounterPrice = pref;
+        reasoning = `Round 3: Hold firm at preferred minimum baseline of ₹${pref.toLocaleString()} with GST input credit and factory warranty benefits.`;
       } else {
-        // Round 3+: Concede towards midpoint between offer and preferred
+        // Round 4+: Concede towards midpoint between offer and preferred
         suggestedCounterPrice = Math.max(floor, Math.round((offer + pref) / 2 / 100) * 100);
+        reasoning = `Round ${round}: Concession corridor reached. Counter at ₹${suggestedCounterPrice.toLocaleString()} to secure batch without crossing below floor.`;
       }
-      reasoning = `Customer offer of ₹${offer.toLocaleString()} is above the absolute floor (₹${floor.toLocaleString()}), generating ₹${metrics.grossProfit.toLocaleString()} gross profit (${metrics.grossMargin}% margin). However, it is below your preferred minimum of ₹${pref.toLocaleString()}. Round ${round}: Counter at ₹${suggestedCounterPrice.toLocaleString()} to defend margin corridor before accepting concessions.`;
     } else if (offer >= pref && offer < target) {
-      // Offer is between preferred minimum and target price!
+      // Offer is between preferred minimum and target price
       if (round <= 1) {
-        // Round 1: DO NOT confirm on first try! Counter as close to target as possible to maximize profit
+        // Round 1: Target the EXACT target catalog rate first! DO NOT surrender margin on first try
         recommendation = 'COUNTER';
-        canApprove = true; // Profitable deal, but commercially held to extract maximum target value
-        suggestedCounterPrice = Math.round((offer + target * 3) / 4 / 100) * 100;
-        if (suggestedCounterPrice <= offer && target > offer) {
-          suggestedCounterPrice = target;
-        }
+        canApprove = false;
+        suggestedCounterPrice = target;
         const maxProfit = (target - cp) * qty;
-        reasoning = `Customer offer of ₹${offer.toLocaleString()} meets the preferred baseline (gross profit ₹${metrics.grossProfit.toLocaleString()}, ${metrics.grossMargin}% margin). However, on the first attempt, DO NOT confirm immediately. Actively push towards target price (₹${target.toLocaleString()}) by countering at ₹${suggestedCounterPrice.toLocaleString()} to capture up to ₹${maxProfit.toLocaleString()} maximum profit.`;
+        reasoning = `Customer offer of ₹${offer.toLocaleString()} is viable, but on Round 1, DO NOT surrender margin early. Firmly anchor at the exact target catalog rate of ₹${target.toLocaleString()} to capture full potential profit of ₹${maxProfit.toLocaleString()}.`;
       } else if (round === 2) {
-        // Round 2: Split difference towards target
+        // Round 2: Concede minimally, retaining significantly MORE than the customer
+        // (70% surplus retained for distributor, customer gets 30% concession from target)
         recommendation = 'COUNTER';
         canApprove = true;
-        suggestedCounterPrice = Math.round((offer + target) / 2 / 100) * 100;
-        reasoning = `Round 2: Customer offer of ₹${offer.toLocaleString()} is viable, but continue defending margin. Split the remaining difference towards target catalog rate by countering at ₹${suggestedCounterPrice.toLocaleString()}.`;
+        suggestedCounterPrice = Math.round((offer * 0.30 + target * 0.70) / 100) * 100;
+        const distributorGain = suggestedCounterPrice - offer;
+        const customerDiscount = target - suggestedCounterPrice;
+        reasoning = `Round 2: Decrease price while strictly retaining the majority of surplus (₹${distributorGain.toLocaleString()} retained for distributor vs ₹${customerDiscount.toLocaleString()} customer discount). Counter at ₹${suggestedCounterPrice.toLocaleString()}.`;
+      } else if (round === 3) {
+        // Round 3: Secondary concession, still retaining 58% towards target
+        recommendation = 'COUNTER';
+        canApprove = true;
+        suggestedCounterPrice = Math.round((offer * 0.42 + target * 0.58) / 100) * 100;
+        reasoning = `Round 3: Second concession round. Counter at ₹${suggestedCounterPrice.toLocaleString()}, maintaining balanced trade partnership while keeping price strictly above customer's initial budget.`;
       } else {
-        // Round 3+: Customer has negotiated through multiple rounds. Close the deal!
+        // Round 4+: Customer has negotiated across multiple rounds and stood firm. Approve deal!
         recommendation = 'ACCEPT';
         canApprove = true;
         suggestedCounterPrice = offer;
-        reasoning = `Round ${round}: Customer has negotiated across multiple rounds. At ₹${offer.toLocaleString()}, the deal delivers healthy profit of ₹${metrics.grossProfit.toLocaleString()} (${metrics.grossMargin}% margin). Concession approved to secure the order and prevent buyer defection.`;
+        reasoning = `Round ${round}: Customer has held firm across multiple negotiation rounds. At ₹${offer.toLocaleString()}, the deal delivers healthy profit of ₹${metrics.grossProfit.toLocaleString()} (${metrics.grossMargin}% margin). Concession approved to secure the order and prevent buyer defection.`;
       }
     } else {
       // Offer >= target: Full target price captured!

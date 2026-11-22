@@ -214,44 +214,56 @@ export const NegotiationPage = () => {
     if (sp < floor) {
       recommendation = 'REJECT';
       canApprove = false;
-      suggestedCounterPrice = round <= 1 
-        ? Math.round((pref + target * 2) / 3 / 100) * 100 
-        : pref;
+      suggestedCounterPrice = round <= 1 ? target : pref;
       reasoning = `Customer offer of ₹${sp.toLocaleString()} is strictly BELOW the absolute floor of ₹${floor.toLocaleString()} (Cost: ₹${cp.toLocaleString()}). Selling below floor violates margin guardrails and risks negative profit. Firm rejection required.`;
     } else if (sp >= floor && sp < pref) {
       recommendation = 'COUNTER';
-      canApprove = round >= 3;
+      canApprove = round >= 4;
       if (round <= 1) {
-        suggestedCounterPrice = Math.round((pref + target) / 2 / 100) * 100;
+        suggestedCounterPrice = target;
+        reasoning = `Customer offer of ₹${sp.toLocaleString()} is below preferred minimum of ₹${pref.toLocaleString()} (Gross Profit: ₹${grossProfit.toLocaleString()}, ${grossMargin}% margin). Round 1: Anchor firmly at exact target catalog rate of ₹${target.toLocaleString()} before considering concessions.`;
       } else if (round === 2) {
+        suggestedCounterPrice = Math.round((pref * 0.35 + target * 0.65) / 100) * 100;
+        reasoning = `Round 2: Customer persists below preferred minimum. Defend distributor margin by countering in upper corridor at ₹${suggestedCounterPrice.toLocaleString()}.`;
+      } else if (round === 3) {
         suggestedCounterPrice = pref;
+        reasoning = `Round 3: Hold firm at preferred minimum baseline of ₹${pref.toLocaleString()} with GST input credit and factory warranty benefits.`;
       } else {
         suggestedCounterPrice = Math.max(floor, Math.round((sp + pref) / 2 / 100) * 100);
+        reasoning = `Round ${round}: Concession corridor reached. Counter at ₹${suggestedCounterPrice.toLocaleString()} to secure batch without crossing below floor.`;
       }
-      reasoning = `Customer offer of ₹${sp.toLocaleString()} is above absolute floor (₹${floor.toLocaleString()}), generating ₹${grossProfit.toLocaleString()} gross profit (${grossMargin}% margin). However, it is below preferred minimum of ₹${pref.toLocaleString()}. Round ${round}: Counter at ₹${suggestedCounterPrice.toLocaleString()} to defend margin corridor before accepting concessions.`;
     } else if (sp >= pref && sp < target) {
       if (round <= 1) {
-        // Round 1: DO NOT confirm on first try! Counter as close to target as possible to maximize profit
+        // Round 1: Target the EXACT target catalog rate first! DO NOT surrender margin on first try
         recommendation = 'COUNTER';
-        canApprove = true;
-        suggestedCounterPrice = Math.round((sp + target * 3) / 4 / 100) * 100;
-        if (suggestedCounterPrice <= sp && target > sp) {
-          suggestedCounterPrice = target;
-        }
+        canApprove = false;
+        suggestedCounterPrice = target;
         const maxProfit = (target - cp) * q;
-        reasoning = `Customer offer of ₹${sp.toLocaleString()} meets the preferred baseline (gross profit ₹${grossProfit.toLocaleString()}, ${grossMargin}% margin). However, on the first attempt, DO NOT confirm immediately. Actively push towards target price (₹${target.toLocaleString()}) by countering at ₹${suggestedCounterPrice.toLocaleString()} to capture up to ₹${maxProfit.toLocaleString()} maximum profit.`;
+        reasoning = `Customer offer of ₹${sp.toLocaleString()} is viable, but on Round 1, DO NOT surrender margin early. Firmly anchor at the exact target catalog rate of ₹${target.toLocaleString()} to capture full potential profit of ₹${maxProfit.toLocaleString()}.`;
       } else if (round === 2) {
+        // Round 2: Concede minimally, retaining significantly MORE than the customer
+        // (70% surplus retained for distributor, customer gets 30% concession from target)
         recommendation = 'COUNTER';
         canApprove = true;
-        suggestedCounterPrice = Math.round((sp + target) / 2 / 100) * 100;
-        reasoning = `Round 2: Customer offer of ₹${sp.toLocaleString()} is viable, but continue defending margin. Split the remaining difference towards target catalog rate by countering at ₹${suggestedCounterPrice.toLocaleString()}.`;
+        suggestedCounterPrice = Math.round((sp * 0.30 + target * 0.70) / 100) * 100;
+        const distributorGain = suggestedCounterPrice - sp;
+        const customerDiscount = target - suggestedCounterPrice;
+        reasoning = `Round 2: Decrease price while strictly retaining the majority of surplus (₹${distributorGain.toLocaleString()} retained for distributor vs ₹${customerDiscount.toLocaleString()} customer discount). Counter at ₹${suggestedCounterPrice.toLocaleString()}.`;
+      } else if (round === 3) {
+        // Round 3: Secondary concession, still retaining 58% towards target
+        recommendation = 'COUNTER';
+        canApprove = true;
+        suggestedCounterPrice = Math.round((sp * 0.42 + target * 0.58) / 100) * 100;
+        reasoning = `Round 3: Second concession round. Counter at ₹${suggestedCounterPrice.toLocaleString()}, maintaining balanced trade partnership while keeping price strictly above customer's initial budget.`;
       } else {
+        // Round 4+: Customer has negotiated across multiple rounds and stood firm. Approve deal!
         recommendation = 'ACCEPT';
         canApprove = true;
         suggestedCounterPrice = sp;
-        reasoning = `Round ${round}: Customer has negotiated across multiple rounds. At ₹${sp.toLocaleString()}, the deal delivers healthy profit of ₹${grossProfit.toLocaleString()} (${grossMargin}% margin). Concession approved to secure the order and prevent buyer defection.`;
+        reasoning = `Round ${round}: Customer has held firm across multiple negotiation rounds. At ₹${sp.toLocaleString()}, the deal delivers healthy profit of ₹${grossProfit.toLocaleString()} (${grossMargin}% margin). Concession approved to secure the order and prevent buyer defection.`;
       }
     } else {
+      // Offer >= target: Full target price captured!
       recommendation = 'ACCEPT';
       canApprove = true;
       suggestedCounterPrice = sp;
