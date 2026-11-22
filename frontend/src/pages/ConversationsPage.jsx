@@ -670,7 +670,7 @@ export const ConversationsPage = () => {
                       )}
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono">
-                      Lot: {convContext?.quantity || 5} units • Target: ₹{targetPrice.toLocaleString('en-IN')}
+                      Lot: {convContext?.quantity || 1} units • Target: ₹{targetPrice.toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>

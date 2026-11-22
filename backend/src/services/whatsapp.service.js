@@ -100,7 +100,7 @@ class WhatsAppService {
 
     let product = null;
     let offeredPrice = 0;
-    let quantity = 5;
+    let quantity = 1;
 
     // 1. Check if conversation has an explicit productId
     if (conversation.productId) {
@@ -108,14 +108,25 @@ class WhatsAppService {
     }
 
     // 2. Check customer interested products
-    if (!product && customer?.interestedProducts && customer.interestedProducts.length > 0) {
-      const primaryInterest = customer.interestedProducts[0];
-      product = allProducts.find(p => p.id === (primaryInterest.productId || primaryInterest.id) || p.sku === primaryInterest.sku);
-      if (primaryInterest.offeredPrice) {
-        offeredPrice = Number(primaryInterest.offeredPrice);
+    if (customer?.interestedProducts && customer.interestedProducts.length > 0) {
+      let matchedInterest = null;
+      if (product) {
+        matchedInterest = customer.interestedProducts.find(p => (p.productId || p.id) === product.id || p.sku === product.sku);
       }
-      if (primaryInterest.quantity) {
-        quantity = Number(primaryInterest.quantity) || 5;
+      if (!matchedInterest) {
+        matchedInterest = customer.interestedProducts[0];
+        if (!product) {
+          product = allProducts.find(p => p.id === (matchedInterest.productId || matchedInterest.id) || p.sku === matchedInterest.sku);
+        }
+      }
+
+      if (matchedInterest) {
+        if (matchedInterest.offeredPrice) {
+          offeredPrice = Number(matchedInterest.offeredPrice);
+        }
+        if (matchedInterest.quantity) {
+          quantity = Number(matchedInterest.quantity) || 1;
+        }
       }
     }
 

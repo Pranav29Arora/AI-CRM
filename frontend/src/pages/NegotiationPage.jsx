@@ -51,7 +51,7 @@ export const NegotiationPage = () => {
   const [selectedCustomerId, setSelectedCustomerId] = useState(preselectedCustomerId || '');
   const [selectedProductId, setSelectedProductId] = useState(preselectedProductId || '');
   const [offerPrice, setOfferPrice] = useState('');
-  const [quantity, setQuantity] = useState(5);
+  const [quantity, setQuantity] = useState(1);
 
   // Active negotiation record (if inspecting an existing deal)
   const [activeNegotiationId, setActiveNegotiationId] = useState(null);
@@ -111,6 +111,7 @@ export const NegotiationPage = () => {
         const customerOffer = explicitOffer > 0 
           ? explicitOffer 
           : (custBudget > 0 ? custBudget : (catalogMatch ? Number(catalogMatch.preferredMinPrice) : catalogPrice));
+        const explicitQty = Number(item.quantity || item.qty || 1);
 
         return {
           id: item.id || catalogMatch?.id || '',
@@ -118,6 +119,7 @@ export const NegotiationPage = () => {
           sellingPrice: catalogPrice,
           offeredPrice: customerOffer,
           offerPrice: customerOffer,
+          quantity: explicitQty > 0 ? explicitQty : 1,
           sku: item.sku || catalogMatch?.sku || '',
           category: item.category || catalogMatch?.category || ''
         };
@@ -135,6 +137,7 @@ export const NegotiationPage = () => {
         sellingPrice: catalogPrice,
         offeredPrice: customerOffer,
         offerPrice: customerOffer,
+        quantity: 1,
         sku: catalogMatch?.sku || '',
         category: catalogMatch?.category || ''
       };
@@ -287,10 +290,19 @@ export const NegotiationPage = () => {
     // Determine target product
     let targetProduct = null;
     let targetOffer = null;
-    let targetQty = quantity || 5;
+    let targetQty = 1;
 
     if (specificProductId) {
       targetProduct = prodsList.find(p => p.id === specificProductId);
+      // Check if this product is in the customer's interested items to get its specific offer and quantity
+      const specificInterest = interestedItems.find(item => 
+        item.id === specificProductId || 
+        (targetProduct && item.name?.toLowerCase() === targetProduct.name?.toLowerCase())
+      );
+      if (specificInterest) {
+        if (specificInterest.offeredPrice > 0) targetOffer = specificInterest.offeredPrice;
+        if (specificInterest.quantity > 0) targetQty = specificInterest.quantity;
+      }
     }
 
     // Match from customer's interested products
@@ -305,6 +317,10 @@ export const NegotiationPage = () => {
       // Customer's explicit offered price from interested item
       if (firstInterest.offeredPrice > 0) {
         targetOffer = firstInterest.offeredPrice;
+      }
+      // Customer's required quantity from interested item
+      if (firstInterest.quantity > 0) {
+        targetQty = firstInterest.quantity;
       }
     }
 
@@ -359,13 +375,15 @@ export const NegotiationPage = () => {
       const offer = item.offeredPrice > 0 
         ? item.offeredPrice 
         : (Number(selectedCustomer?.budget) > 0 ? Number(selectedCustomer.budget) : matched.preferredMinPrice);
+      const itemQty = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
       setSelectedProductId(matched.id);
       setOfferPrice(offer);
+      setQuantity(itemQty);
       handleEvaluateDirect({
         customerId: selectedCustomerId,
         productId: matched.id,
         offerPrice: offer,
-        quantity
+        quantity: itemQty
       });
     }
   };
@@ -709,6 +727,9 @@ export const NegotiationPage = () => {
                           >
                             <Package className="w-3 h-3 text-brand-300" />
                             <span>{item.name}</span>
+                            <span className="font-mono text-[10px] bg-slate-950/70 px-1.5 py-0.2 rounded text-slate-300 border border-slate-700">
+                              Qty: {item.quantity || 1}
+                            </span>
                             {item.offeredPrice > 0 ? (
                               <span className="font-mono text-[10px] bg-slate-950/60 px-1.5 py-0.5 rounded text-amber-300 font-bold border border-amber-500/30">
                                 Offer: ₹{Number(item.offeredPrice).toLocaleString()}
@@ -743,12 +764,14 @@ export const NegotiationPage = () => {
                       const newOffer = interestMatch?.offeredPrice > 0
                         ? interestMatch.offeredPrice
                         : (Number(selectedCustomer?.budget) > 0 ? Number(selectedCustomer.budget) : p.preferredMinPrice);
+                      const newQty = Number(interestMatch?.quantity) > 0 ? Number(interestMatch.quantity) : (quantity || 1);
                       setOfferPrice(newOffer);
+                      setQuantity(newQty);
                       handleEvaluateDirect({
                         customerId: selectedCustomerId,
                         productId: pid,
                         offerPrice: newOffer,
-                        quantity
+                        quantity: newQty
                       });
                     }
                   }}

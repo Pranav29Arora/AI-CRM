@@ -527,11 +527,11 @@ Provide a JSON response with:
    * Generates a formal Indian B2B wholesale opening message to initiate WhatsApp deal outreach.
    * "hello Name, you enquired about this product and whatsover offers"
    */
-  async generateOpeningOutreach({ customer, product, offeredPrice, quantity = 5, tone = 'formal' }) {
+  async generateOpeningOutreach({ customer, product, offeredPrice, quantity = 1, tone = 'formal' }) {
     const customerFirstName = customer?.name ? customer.name.split(' ')[0] : 'Partner';
     const customerFullName = customer?.name || 'Valued Partner';
     const productName = product?.name || 'Wholesale Lot';
-    const qty = Number(quantity) || 5;
+    const qty = Number(quantity) || 1;
     const price = Number(offeredPrice) || Number(customer?.budget) || Number(product?.preferredMinPrice) || Number(product?.targetPrice) || 0;
     const formattedPrice = price.toLocaleString('en-IN');
 
@@ -639,7 +639,7 @@ Return ONLY a valid JSON object in this exact format:
     const customerFirstName = customer?.name ? customer.name.split(' ')[0] : 'Partner';
     const customerFullName = customer?.name || 'Valued Partner';
     const productName = product?.name || 'Wholesale Lot';
-    const quantity = evaluation?.quantity || 5;
+    const quantity = evaluation?.quantity || 1;
 
     const floor = evaluation?.boundaries?.absoluteLowerLimit || product?.absoluteLowerLimit || 0;
     const pref = evaluation?.boundaries?.preferredMinPrice || product?.preferredMinPrice || 0;

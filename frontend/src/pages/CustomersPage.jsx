@@ -137,12 +137,14 @@ export const CustomersPage = () => {
       const finalSellingPrice = sellingPrice > 0 ? sellingPrice : Number(catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
       const explicitOffer = Number(prod.offeredPrice || prod.offerPrice || 0);
       const finalOfferPrice = explicitOffer > 0 ? explicitOffer : (Number(custBudget) > 0 ? Number(custBudget) : 0);
+      const explicitQty = Number(prod.quantity || prod.qty || 1);
 
       return {
         id: prod.id || catalogMatch?.id || '',
         name: prod.name || catalogMatch?.name || 'Catalog Product',
         sellingPrice: finalSellingPrice,
         offeredPrice: finalOfferPrice,
+        quantity: explicitQty > 0 ? explicitQty : 1,
         sku: prod.sku || catalogMatch?.sku || '',
         category: prod.category || catalogMatch?.category || ''
       };
@@ -155,6 +157,7 @@ export const CustomersPage = () => {
         name: match.name,
         sellingPrice: Number(match.targetPrice || match.preferredMinPrice || 0),
         offeredPrice: Number(custBudget) || 0,
+        quantity: 1,
         sku: match.sku || '',
         category: match.category || ''
       };
@@ -164,6 +167,7 @@ export const CustomersPage = () => {
       name: str,
       sellingPrice: 0,
       offeredPrice: Number(custBudget) || 0,
+      quantity: 1,
       sku: '',
       category: ''
     };
@@ -241,12 +245,13 @@ export const CustomersPage = () => {
       setSubmitting(true);
       setFormError('');
 
-      // Build structured interestedProducts list with catalog selling prices and customer offered prices
+      // Build structured interestedProducts list with catalog selling prices, customer offered prices & required quantities
       let interestedProducts = (formData.selectedProducts || []).map(p => ({
         id: p.id || '',
         name: p.name,
         sellingPrice: Number(p.sellingPrice) || 0,
         offeredPrice: Number(p.offeredPrice !== undefined && p.offeredPrice !== '' ? p.offeredPrice : (formData.budget || 0)),
+        quantity: Math.max(1, Number(p.quantity) || 1),
         sku: p.sku || '',
         category: p.category || ''
       }));
@@ -261,6 +266,7 @@ export const CustomersPage = () => {
           name: customName,
           sellingPrice: match ? Number(match.targetPrice || match.preferredMinPrice || 0) : 0,
           offeredPrice: defaultOffer,
+          quantity: 1,
           sku: match?.sku || 'CUSTOM',
           category: match?.category || 'Custom'
         });
@@ -303,6 +309,7 @@ export const CustomersPage = () => {
         name: p.name,
         sellingPrice: Number(p.sellingPrice) || 0,
         offeredPrice: Number(p.offeredPrice !== undefined && p.offeredPrice !== '' ? p.offeredPrice : (formData.budget || 0)),
+        quantity: Math.max(1, Number(p.quantity) || 1),
         sku: p.sku || '',
         category: p.category || ''
       }));
@@ -316,6 +323,7 @@ export const CustomersPage = () => {
           name: customName,
           sellingPrice: match ? Number(match.targetPrice || match.preferredMinPrice || 0) : 0,
           offeredPrice: defaultOffer,
+          quantity: 1,
           sku: match?.sku || 'CUSTOM',
           category: match?.category || 'Custom'
         });
@@ -431,6 +439,7 @@ export const CustomersPage = () => {
               name: prod.name,
               sellingPrice: Number(prod.targetPrice || prod.preferredMinPrice || 0),
               offeredPrice: defaultOffer,
+              quantity: 1,
               sku: prod.sku || '',
               category: prod.category || ''
             }
@@ -461,6 +470,7 @@ export const CustomersPage = () => {
             name: customName,
             sellingPrice: match ? Number(match.targetPrice || match.preferredMinPrice || 0) : 0,
             offeredPrice: defaultOffer,
+            quantity: 1,
             sku: match?.sku || 'CUSTOM',
             category: match?.category || 'Custom'
           }
@@ -469,7 +479,7 @@ export const CustomersPage = () => {
       }));
     };
 
-    const totalSelectedValue = (formData.selectedProducts || []).reduce((sum, p) => sum + (Number(p.sellingPrice) || 0), 0);
+    const totalSelectedValue = (formData.selectedProducts || []).reduce((sum, p) => sum + ((Number(p.sellingPrice) || 0) * (Number(p.quantity) || 1)), 0);
 
     return (
       <div className="space-y-3 p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800">
@@ -477,10 +487,10 @@ export const CustomersPage = () => {
           <div>
             <label className="block text-xs font-bold text-white flex items-center gap-1.5">
               <Package className="w-3.5 h-3.5 text-brand-400" />
-              Interested Products & Customer Offered Rates
+              Interested Products, Order Quantity & Customer Offered Rates
             </label>
             <p className="text-[11px] text-slate-400">
-              Select products from database catalog. Specify customer offered rates to power the AI Margin Guard.
+              Select products from catalog. Specify required quantity and customer offered rates to power the AI Negotiation Engine.
             </p>
           </div>
           <span className="text-[11px] text-emerald-400 font-mono font-bold self-start sm:self-auto px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
@@ -492,7 +502,7 @@ export const CustomersPage = () => {
         {(formData.selectedProducts || []).length > 0 && (
           <div className="space-y-1.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Selected Products (Catalog Price & Customer Offer):
+              Selected Products (Order Quantity, Catalog Price & Customer Offer):
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {formData.selectedProducts.map((p, idx) => (
@@ -501,7 +511,7 @@ export const CustomersPage = () => {
                   className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/80 border border-brand-500/30 text-xs text-white"
                 >
                   <div className="min-w-0 pr-1">
-                    <span className="font-semibold text-slate-100 truncate block max-w-[140px]" title={p.name}>
+                    <span className="font-semibold text-slate-100 truncate block max-w-[130px]" title={p.name}>
                       {p.name}
                     </span>
                     <span className="text-[10px] text-slate-500 font-mono">
@@ -510,7 +520,26 @@ export const CustomersPage = () => {
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-1 rounded-lg border border-slate-700">
+                    {/* Quantity Input */}
+                    <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-1 rounded-lg border border-slate-700" title="Order Quantity">
+                      <span className="text-[10px] text-brand-300 font-bold uppercase">Qty:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="1"
+                        value={p.quantity !== undefined ? p.quantity : 1}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1);
+                          const updated = [...formData.selectedProducts];
+                          updated[idx] = { ...updated[idx], quantity: val };
+                          setFormData({ ...formData, selectedProducts: updated });
+                        }}
+                        className="w-12 px-1 py-0.5 text-xs font-mono bg-transparent text-white font-bold focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Customer Offered Price Input */}
+                    <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-1 rounded-lg border border-slate-700" title="Customer Offered Price per Unit">
                       <span className="text-[10px] text-amber-300 font-bold uppercase">Offer: ₹</span>
                       <input
                         type="number"
@@ -871,7 +900,12 @@ export const CustomersPage = () => {
                                     <span className="font-medium text-slate-200 truncate block max-w-[180px]" title={pInfo.name}>
                                       {pInfo.name}
                                     </span>
-                                    {pInfo.sku && <span className="text-[9px] text-slate-500 font-mono">SKU: {pInfo.sku}</span>}
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      {pInfo.sku && <span className="text-[9px] text-slate-500 font-mono">SKU: {pInfo.sku}</span>}
+                                      <span className="text-[9px] font-bold text-brand-300 font-mono bg-brand-500/10 px-1 py-0.2 rounded border border-brand-500/20">
+                                        Qty: {pInfo.quantity || 1}
+                                      </span>
+                                    </div>
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
                                     <div className="flex flex-col items-end">
@@ -1026,7 +1060,12 @@ export const CustomersPage = () => {
                                 <span className="font-medium text-slate-200 truncate block max-w-[200px]" title={pInfo.name}>
                                   {pInfo.name}
                                 </span>
-                                {pInfo.sku && <span className="text-[9px] text-slate-500 font-mono">SKU: {pInfo.sku}</span>}
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {pInfo.sku && <span className="text-[9px] text-slate-500 font-mono">SKU: {pInfo.sku}</span>}
+                                  <span className="text-[9px] font-bold text-brand-300 font-mono bg-brand-500/10 px-1 py-0.2 rounded border border-brand-500/20">
+                                    Qty: {pInfo.quantity || 1}
+                                  </span>
+                                </div>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
                                 <div className="flex flex-col items-end">
@@ -1430,7 +1469,12 @@ export const CustomersPage = () => {
                           <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
                             <div className="min-w-0 pr-2">
                               <p className="font-semibold text-white truncate">{pInfo.name}</p>
-                              {pInfo.sku && <p className="text-[10px] text-slate-500 font-mono">SKU: {pInfo.sku}</p>}
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {pInfo.sku && <p className="text-[10px] text-slate-500 font-mono">SKU: {pInfo.sku}</p>}
+                                <span className="text-[10px] font-bold text-brand-300 font-mono bg-brand-500/10 px-1.5 py-0.2 rounded border border-brand-500/20">
+                                  Qty: {pInfo.quantity || 1} units
+                                </span>
+                              </div>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
                               <span className="font-mono font-bold text-emerald-400 text-xs px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
