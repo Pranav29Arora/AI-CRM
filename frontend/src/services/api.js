@@ -12,15 +12,13 @@ import { auth } from '../config/firebase.js';
 const BASE_URL = '/api';
 
 function getActiveToken() {
-  return sessionStorage.getItem('aicrm_token') || localStorage.getItem('aicrm_token');
+  return localStorage.getItem('aicrm_token') || sessionStorage.getItem('aicrm_token') || null;
 }
 
 function saveActiveToken(token) {
   if (!token) return;
+  localStorage.setItem('aicrm_token', token);
   sessionStorage.setItem('aicrm_token', token);
-  if (localStorage.getItem('aicrm_remember_me') === 'true') {
-    localStorage.setItem('aicrm_token', token);
-  }
 }
 
 export async function apiRequest(endpoint, options = {}, isRetry = false) {

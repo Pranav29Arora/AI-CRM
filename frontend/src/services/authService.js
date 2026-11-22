@@ -70,31 +70,17 @@ export function mapAuthError(err) {
  */
 export const authService = {
   /**
-   * Helper to write session token & user profile to appropriate storage
+   * Helper to write session token & user profile to persistent storage
    */
-  setStoredSession(token, user, rememberMe = null) {
-    const isRemembered = rememberMe !== null 
-      ? rememberMe 
-      : localStorage.getItem('aicrm_remember_me') === 'true';
-
+  setStoredSession(token, user) {
     if (token) {
+      localStorage.setItem('aicrm_token', token);
       sessionStorage.setItem('aicrm_token', token);
-      if (isRemembered) {
-        localStorage.setItem('aicrm_token', token);
-        localStorage.setItem('aicrm_remember_me', 'true');
-      } else {
-        localStorage.removeItem('aicrm_token');
-        localStorage.removeItem('aicrm_remember_me');
-      }
     }
 
     if (user) {
+      localStorage.setItem('aicrm_user', JSON.stringify(user));
       sessionStorage.setItem('aicrm_user', JSON.stringify(user));
-      if (isRemembered) {
-        localStorage.setItem('aicrm_user', JSON.stringify(user));
-      } else {
-        localStorage.removeItem('aicrm_user');
-      }
     }
   },
 
@@ -109,7 +95,7 @@ export const authService = {
   /**
    * Real user login via Firebase Authentication
    */
-  async login(email, password, rememberMe = false) {
+  async login(email, password, rememberMe = true) {
     if (!email || !email.trim()) {
       throw new Error('Please enter your email address.');
     }
@@ -118,12 +104,9 @@ export const authService = {
     }
 
     try {
-      // Set persistence based on remember me choice
+      // Set reliable browser local persistence so sessions persist across page refreshes
       try {
-        await setPersistence(
-          auth,
-          rememberMe ? browserLocalPersistence : browserSessionPersistence
-        );
+        await setPersistence(auth, browserLocalPersistence);
       } catch (persistErr) {
         console.warn('[Firebase Auth] Persistence configuration notice:', persistErr.message);
       }
@@ -176,14 +159,11 @@ export const authService = {
   /**
    * Real user sign-in via Google Authentication
    */
-  async loginWithGoogle(rememberMe = false) {
+  async loginWithGoogle() {
     try {
-      // Set persistence based on remember me choice
+      // Set reliable browser local persistence so sessions persist across page refreshes
       try {
-        await setPersistence(
-          auth,
-          rememberMe ? browserLocalPersistence : browserSessionPersistence
-        );
+        await setPersistence(auth, browserLocalPersistence);
       } catch (persistErr) {
         console.warn('[Firebase Google Auth] Persistence notice:', persistErr.message);
       }
@@ -219,7 +199,7 @@ export const authService = {
         console.warn('[Firestore Profile Warning]:', err.message);
       }
 
-      this.setStoredSession(token, profile, rememberMe);
+      this.setStoredSession(token, profile);
 
       return {
         user: profile,
@@ -383,26 +363,14 @@ export const authService = {
 
   getStoredUser() {
     try {
-      const sessionUser = sessionStorage.getItem('aicrm_user');
-      if (sessionUser) return JSON.parse(sessionUser);
-
-      if (localStorage.getItem('aicrm_remember_me') === 'true') {
-        const stored = localStorage.getItem('aicrm_user');
-        return stored ? JSON.parse(stored) : null;
-      }
-      return null;
+      const stored = localStorage.getItem('aicrm_user') || sessionStorage.getItem('aicrm_user');
+      return stored ? JSON.parse(stored) : null;
     } catch {
       return null;
     }
   },
 
   getToken() {
-    const sessionToken = sessionStorage.getItem('aicrm_token');
-    if (sessionToken) return sessionToken;
-
-    if (localStorage.getItem('aicrm_remember_me') === 'true') {
-      return localStorage.getItem('aicrm_token');
-    }
-    return null;
+    return localStorage.getItem('aicrm_token') || sessionStorage.getItem('aicrm_token') || null;
   }
 };

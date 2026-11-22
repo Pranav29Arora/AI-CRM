@@ -10,24 +10,10 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // If opening a new session and rememberMe was not chosen, purge old persistent tokens
-    if (localStorage.getItem('aicrm_remember_me') !== 'true' && !sessionStorage.getItem('aicrm_user')) {
-      localStorage.removeItem('aicrm_user');
-      localStorage.removeItem('aicrm_token');
-    }
-
     // 1. Listen directly to Firebase Authentication state changes
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
-          // If fresh window/tab launch without rememberMe, do not auto-login: present login page
-          if (!sessionStorage.getItem('aicrm_user') && localStorage.getItem('aicrm_remember_me') !== 'true') {
-            await authService.logout();
-            setUser(null);
-            setLoading(false);
-            return;
-          }
-
           const freshToken = await firebaseUser.getIdToken();
           const currentUser = await authService.getCurrentUser();
           const profile = currentUser || {
