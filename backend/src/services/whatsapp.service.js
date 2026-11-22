@@ -324,13 +324,85 @@ class WhatsAppService {
       evaluatedPrice: extractedOffer
     });
 
+    // 5. Automatic Deal Closure Detection:
+    // If buyer accepted OR AI confirmed the order, update customer to Closed Won & record in analytics
+    const buyerAgreed = /(deal done|confirm deal|agree|send invoice|proforma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do)/i.test(text);
+    const aiConfirmed = (
+      aiStrategy.intent === 'DEAL_ACCEPTANCE' ||
+      aiStrategy.recommendation === 'ACCEPT' ||
+      /delighted to finalize|finalize this order|issue your pro-forma|concession approved/i.test(aiStrategy.replyText || '')
+    );
+
+    let closedDealResult = null;
+    if ((buyerAgreed || aiConfirmed) && customer && product && extractedOffer >= (product.absoluteLowerLimit || 0)) {
+      try {
+        closedDealResult = await dataService.recordClosedWonDeal({
+          customerId: customer.id,
+          productId: product.id,
+          finalPrice: extractedOffer,
+          quantity,
+          conversationId,
+          source: 'WhatsApp Desk'
+        });
+      } catch (closeErr) {
+        console.warn('[Auto Deal Close Notice]:', closeErr.message);
+      }
+    }
+
     return {
       conversation: aiResult.conversation,
       buyerMessage: buyerResult.message,
       aiReply: aiResult.message,
       evaluation,
-      aiStrategy
+      aiStrategy,
+      isDealClosed: !!closedDealResult,
+      closedDealResult
     };
+  }
+
+  /**
+   * Explicitly seals and locks a deal from the WhatsApp Hub Desk UI.
+   * Updates customer leadStatus to "Closed Won", writes detailed description in notes,
+   * creates accepted negotiation, and syncs across Customers page & Dashboard.
+   */
+  async closeDeal({ conversationId, finalPrice = null, quantity = null }) {
+    const conversation = dataService.getConversationById(conversationId);
+    if (!conversation) {
+      const err = new Error(`Conversation ${conversationId} not found.`);
+      err.status = 404;
+      throw err;
+    }
+
+    const { customer, product, offeredPrice, quantity: defQty } = this.resolveProductAndCustomer(conversation);
+    if (!customer || !product) {
+      const err = new Error("Cannot close deal: Customer or product not resolved.");
+      err.status = 400;
+      throw err;
+    }
+
+    const sp = finalPrice !== null && finalPrice !== undefined ? Number(finalPrice) : (offeredPrice || product.targetPrice);
+    const qty = quantity !== null && quantity !== undefined ? Number(quantity) : defQty;
+
+    const result = await dataService.recordClosedWonDeal({
+      customerId: customer.id,
+      productId: product.id,
+      finalPrice: sp,
+      quantity: qty,
+      conversationId,
+      source: 'WhatsApp Desk'
+    });
+
+    const status = this.isLiveAvailable ? 'sent' : 'simulated';
+    await dataService.addMessageToConversation(conversationId, {
+      sender: 'salesperson',
+      text: `🏆 DEAL CLOSED & WON! Finalized order for ${qty} units of ${product.name} at ₹${sp.toLocaleString('en-IN')}/unit (Total: ₹${(sp * qty).toLocaleString('en-IN')}). Pro-forma invoice issued.`,
+      status,
+      isAiGenerated: true,
+      tacticApplied: 'Deal Closed & Pro-Forma Finalized',
+      evaluatedPrice: sp
+    });
+
+    return result;
   }
 
   /**

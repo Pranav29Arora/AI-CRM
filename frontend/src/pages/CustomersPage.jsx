@@ -31,7 +31,8 @@ import {
   Table,
   LayoutGrid,
   Check,
-  ChevronDown
+  ChevronDown,
+  Trophy
 } from 'lucide-react';
 
 export const CustomersPage = () => {
@@ -399,7 +400,7 @@ export const CustomersPage = () => {
       case 'Qualified':
         return 'bg-indigo-500/10 text-indigo-300 border-indigo-500/25';
       case 'Closed Won':
-        return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25';
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm shadow-emerald-500/10 font-bold';
       default:
         return 'bg-slate-800 text-slate-400 border-slate-700';
     }
@@ -1016,8 +1017,9 @@ export const CustomersPage = () => {
                       </div>
                     </div>
 
-                    <span className={`px-2.5 py-1 text-[11px] font-bold rounded-full border ${getStatusBadge(customer.leadStatus)}`}>
-                      {customer.leadStatus}
+                    <span className={`px-2.5 py-1 text-[11px] font-bold rounded-full border flex items-center gap-1 ${getStatusBadge(customer.leadStatus)}`}>
+                      {customer.leadStatus === 'Closed Won' && <Trophy className="w-3.5 h-3.5 text-amber-300" />}
+                      <span>{customer.leadStatus}</span>
                     </span>
                   </div>
 
@@ -1097,11 +1099,23 @@ export const CustomersPage = () => {
                     )}
                   </div>
 
-                  {/* Notes preview */}
+                  {/* Notes & Closed Won Deal Summary preview */}
                   {customer.notes && (
-                    <p className="text-xs text-slate-400 line-clamp-2 italic mb-4 bg-slate-950/40 p-3 rounded-xl border border-slate-800/60">
-                      "{customer.notes}"
-                    </p>
+                    <div className={`text-xs mb-4 p-3 rounded-xl border ${
+                      customer.leadStatus === 'Closed Won'
+                        ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200'
+                        : 'bg-slate-950/40 border-slate-800/60 text-slate-400'
+                    }`}>
+                      {customer.leadStatus === 'Closed Won' && (
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                          <Trophy className="w-3 h-3 text-amber-300" />
+                          Closed Won Deal Summary:
+                        </span>
+                      )}
+                      <p className="line-clamp-2 leading-relaxed">
+                        {customer.notes}
+                      </p>
+                    </div>
                   )}
                 </div>
 
@@ -1448,9 +1462,22 @@ export const CustomersPage = () => {
                 )}
 
                 {customerDetails?.notes && (
-                  <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-xs">
-                    <strong className="text-slate-400 block mb-1">Account Notes:</strong>
-                    <p className="text-slate-300 italic">{customerDetails.notes}</p>
+                  <div className={`p-3.5 rounded-2xl border text-xs ${
+                    customerDetails.leadStatus === 'Closed Won'
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-100 shadow-lg shadow-emerald-950/40'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-300'
+                  }`}>
+                    <strong className="block mb-1.5 font-bold flex items-center gap-1.5 text-white">
+                      {customerDetails.leadStatus === 'Closed Won' ? (
+                        <>
+                          <Trophy className="w-4 h-4 text-amber-300" />
+                          <span className="text-emerald-300">Closed Won Deal Summary & Commercial Record:</span>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">Account Notes:</span>
+                      )}
+                    </strong>
+                    <p className="whitespace-pre-line leading-relaxed">{customerDetails.notes}</p>
                   </div>
                 )}
 
@@ -1506,19 +1533,28 @@ export const CustomersPage = () => {
                   <div className="pt-2">
                     <strong className="text-xs text-white block mb-2">Active & Previous Negotiations ({customerDetails.negotiations.length}):</strong>
                     <div className="space-y-2">
-                      {customerDetails.negotiations.map((neg) => (
-                        <div key={neg.id} className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs flex items-center justify-between">
-                          <div>
-                            <p className="font-bold text-white">{neg.productName}</p>
-                            <p className="text-[11px] text-slate-400">
-                              Current offer: <span className="font-mono text-emerald-400">₹{neg.currentOffer.toLocaleString()}</span> • Qty: {neg.quantity}
-                            </p>
+                      {customerDetails.negotiations.map((neg) => {
+                        const isWon = neg.status === 'Accepted' || neg.status === 'Won';
+                        return (
+                          <div key={neg.id} className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-white flex items-center gap-1.5">
+                                {isWon && <Trophy className="w-3.5 h-3.5 text-amber-300" />}
+                                <span>{neg.productName}</span>
+                              </p>
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                Final offer: <span className="font-mono text-emerald-400 font-bold">₹{neg.currentOffer.toLocaleString()}</span> • Qty: {neg.quantity} units
+                                {neg.grossProfit > 0 && <span className="ml-2 text-emerald-400 font-mono font-semibold">(Profit: +₹{neg.grossProfit.toLocaleString()})</span>}
+                              </p>
+                            </div>
+                            <span className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full border ${
+                              isWon ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                            }`}>
+                              {isWon ? '✓ Closed Won' : neg.status}
+                            </span>
                           </div>
-                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                            {neg.status}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

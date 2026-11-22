@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { whatsappService } from '../services/whatsappService';
 import { customerService } from '../services/customerService';
 import { productService } from '../services/productService';
@@ -33,7 +33,9 @@ import {
   DollarSign,
   ArrowRight,
   SlidersHorizontal,
-  PlayCircle
+  PlayCircle,
+  Trophy,
+  Award
 } from 'lucide-react';
 import { aiService } from '../services/aiService';
 
@@ -70,6 +72,7 @@ export const ConversationsPage = () => {
   const [threadSummary, setThreadSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const [lockingDeal, setLockingDeal] = useState(false);
 
   // New Wholesale Conversation Modal
   const [isNewConvModalOpen, setIsNewConvModalOpen] = useState(false);
@@ -263,6 +266,9 @@ export const ConversationsPage = () => {
         if (res.evaluation) {
           setConvContext(prev => prev ? { ...prev, evaluation: res.evaluation } : prev);
         }
+        if (res.isDealClosed) {
+          await loadConvDetails(activeConvId);
+        }
 
         // Refresh list
         const updatedList = await whatsappService.getConversations();
@@ -290,6 +296,25 @@ export const ConversationsPage = () => {
       } finally {
         setSending(false);
       }
+    }
+  };
+
+  // Lock and Finalize Deal from WhatsApp Hub Desk
+  const handleLockDeal = async () => {
+    if (!activeConvId) return;
+    try {
+      setLockingDeal(true);
+      await whatsappService.closeDeal(activeConvId, {
+        finalPrice: convContext?.offeredPrice || currentPrice,
+        quantity: convContext?.quantity || 1
+      });
+      await loadConvDetails(activeConvId);
+      const updatedList = await whatsappService.getConversations();
+      setConversations(updatedList);
+    } catch (err) {
+      alert("Failed to lock deal: " + err.message);
+    } finally {
+      setLockingDeal(false);
     }
   };
 
@@ -412,6 +437,10 @@ export const ConversationsPage = () => {
   const currentPrice = evaluation?.suggestedCounterPrice || prefPrice;
   const grossMargin = evaluation?.metrics?.grossMargin ?? 10;
   const grossProfit = evaluation?.metrics?.grossProfit ?? 0;
+  const isDealClosed = !!(activeConv?.isDealClosed || convContext?.customer?.leadStatus === 'Closed Won' || activeConv?.dealStatus === 'Closed Won');
+  const closedPrice = activeConv?.closedDealDetails?.finalPrice || convContext?.offeredPrice || currentPrice;
+  const closedQty = activeConv?.closedDealDetails?.quantity || convContext?.quantity || 1;
+  const closedTotal = activeConv?.closedDealDetails?.totalDealValue || (closedPrice * closedQty);
 
   return (
     <div className="space-y-3.5 flex flex-col h-[calc(100vh-8.5rem)]">
@@ -693,7 +722,7 @@ export const ConversationsPage = () => {
                   </div>
                 </div>
 
-                {/* Live Margin Status Badge */}
+                {/* Live Margin Status Badge & Lock Deal Action */}
                 <div className="flex items-center gap-2">
                   <div className="text-right">
                     <span className="text-[10px] text-slate-400 block">Deal Margin</span>
@@ -712,6 +741,29 @@ export const ConversationsPage = () => {
                   }`}>
                     {evaluation?.recommendation || 'GUARDED'}
                   </span>
+
+                  {/* Closed Won Badge or Lock Deal Action Button */}
+                  {isDealClosed ? (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs shadow-md shadow-emerald-500/20">
+                      <Trophy className="w-3.5 h-3.5 text-amber-300" />
+                      <span>CLOSED WON</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleLockDeal}
+                      disabled={lockingDeal}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-600/30 transition-all hover:scale-[1.02] disabled:opacity-50"
+                      title="Lock deal at current price and mark customer Closed Won in Customers page & Dashboard"
+                    >
+                      {lockingDeal ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3 h-3" />
+                      )}
+                      <span>Lock Deal</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -763,6 +815,44 @@ export const ConversationsPage = () => {
                   🔒 WhatsApp Simulation Sandbox • Autonomous Margin Protection Active
                 </span>
               </div>
+
+              {/* Deal Closed Won Celebratory Banner in Chat Stream */}
+              {isDealClosed && (
+                <div className="my-2 p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-slate-900/95 to-teal-950/80 border border-emerald-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 flex-shrink-0 shadow-inner">
+                      <Trophy className="w-5 h-5 text-amber-300" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-sm">Deal Closed & Won!</span>
+                        <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30 font-semibold">
+                          Pro-Forma Invoice Requested
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 mt-0.5">
+                        {closedQty} units of {product?.name || 'Item'} finalized @ ₹{closedPrice.toLocaleString('en-IN')}/unit
+                        (Total Deal: <strong className="font-mono text-emerald-400">₹{closedTotal.toLocaleString('en-IN')}</strong>)
+                        • Gross Profit: <strong className="font-mono text-emerald-400">+₹{grossProfit.toLocaleString('en-IN')}</strong> ({grossMargin}% margin)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-auto">
+                    <Link
+                      to="/customers"
+                      className="px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 rounded-xl transition-all"
+                    >
+                      Customers Page →
+                    </Link>
+                    <Link
+                      to="/dashboard"
+                      className="px-3 py-1.5 text-xs font-semibold text-brand-300 hover:text-white bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 rounded-xl transition-all"
+                    >
+                      Dashboard →
+                    </Link>
+                  </div>
+                </div>
+              )}
 
               {/* EMPTY THREAD: START CONVERSATION WITH AI OPENER BANNER */}
               {activeConv.messages && activeConv.messages.length === 0 && (

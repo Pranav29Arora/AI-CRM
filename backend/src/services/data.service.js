@@ -800,6 +800,140 @@ class DataService {
     return this.negotiations[index];
   }
 
+  /**
+   * Finalizes and records a Closed Won deal from WhatsApp Desk or Deal Desk.
+   * Updates customer leadStatus, appends deal summary to customer notes,
+   * records the accepted negotiation, marks conversation closed, and syncs to Firestore.
+   */
+  async recordClosedWonDeal({
+    customerId,
+    productId,
+    finalPrice,
+    quantity = 1,
+    conversationId = null,
+    source = 'WhatsApp Desk'
+  }) {
+    const customer = this.customers.find(c => c.id === customerId);
+    const product = this.products.find(p => p.id === productId);
+
+    if (!customer) {
+      throw new Error(`Customer with ID ${customerId} not found.`);
+    }
+
+    const prodName = product ? product.name : (customer.interestedProducts?.[0]?.name || 'Wholesale Lot');
+    const prodSku = product?.sku || customer.interestedProducts?.[0]?.sku || '';
+    const sp = Number(finalPrice) > 0 ? Number(finalPrice) : Number(customer.budget || 0);
+    const qty = Math.max(1, Number(quantity) || Number(customer.interestedProducts?.[0]?.quantity) || 1);
+    const cp = product ? Number(product.costPrice || 0) : 0;
+    const totalDealValue = sp * qty;
+    const grossProfit = (sp - cp) * qty;
+    const grossMargin = sp > 0 ? Number((((sp - cp) / sp) * 100).toFixed(2)) : 0;
+    const timestamp = new Date().toISOString();
+
+    // 1. Create or Update Negotiation with status "Accepted"
+    let neg = this.negotiations.find(n => n.customerId === customerId && (n.productId === productId || n.productName === prodName));
+    if (!neg) {
+      neg = {
+        id: `neg-${Date.now()}`,
+        customerId: customer.id,
+        customerName: customer.name,
+        productId: product ? product.id : (productId || ''),
+        productName: prodName,
+        currentOffer: sp,
+        quantity: qty,
+        costPrice: cp,
+        grossProfit,
+        grossMargin,
+        status: "Accepted",
+        recommendation: "ACCEPT",
+        rounds: 3,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      this.negotiations.unshift(neg);
+    } else {
+      neg.status = "Accepted";
+      neg.recommendation = "ACCEPT";
+      neg.currentOffer = sp;
+      neg.quantity = qty;
+      neg.grossProfit = grossProfit;
+      neg.grossMargin = grossMargin;
+      neg.updatedAt = timestamp;
+    }
+
+    // 2. Update Customer Record: leadStatus -> "Closed Won" and append deal description
+    const dateFormatted = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+    const dealSummary = `🏆 Closed Won via ${source}: ${qty} units of ${prodName} ${prodSku ? `(${prodSku}) ` : ''}@ ₹${sp.toLocaleString('en-IN')}/unit. Total Deal Value: ₹${totalDealValue.toLocaleString('en-IN')}. Lot Gross Profit: ₹${grossProfit.toLocaleString('en-IN')} (${grossMargin}% margin). Pro-forma invoice issued on ${dateFormatted}.`;
+
+    customer.leadStatus = "Closed Won";
+    customer.budget = sp;
+    customer.previousNegotiations = Math.max(1, (customer.previousNegotiations || 0) + 1);
+
+    // Append deal summary cleanly to notes
+    if (!customer.notes || !customer.notes.trim()) {
+      customer.notes = dealSummary;
+    } else if (!customer.notes.includes(prodName) || !customer.notes.includes('Closed Won')) {
+      customer.notes = `${customer.notes.trim()}\n\n${dealSummary}`;
+    }
+    customer.updatedAt = timestamp;
+
+    // 3. Update Conversation if applicable
+    let conversation = null;
+    if (conversationId) {
+      conversation = this.conversations.find(c => c.id === conversationId);
+      if (conversation) {
+        conversation.isDealClosed = true;
+        conversation.dealStatus = "Closed Won";
+        conversation.closedDealDetails = {
+          finalPrice: sp,
+          quantity: qty,
+          totalDealValue,
+          grossProfit,
+          grossMargin,
+          productName: prodName,
+          closedAt: timestamp
+        };
+      }
+    }
+
+    // 4. Save to Disk and sync to Cloud Firestore
+    this.saveToDisk();
+
+    try {
+      const syncOps = [
+        setDoc(doc(db, 'customers', customer.id), customer, { merge: true }),
+        setDoc(doc(db, 'negotiations', neg.id), neg, { merge: true })
+      ];
+      if (conversation) {
+        syncOps.push(setDoc(doc(db, 'conversations', conversation.id), conversation, { merge: true }));
+      }
+      await Promise.all(syncOps);
+    } catch (err) {
+      console.warn('[Firestore Record Closed Won Sync Notice]:', err.message);
+    }
+
+    return {
+      success: true,
+      customer,
+      negotiation: neg,
+      conversation,
+      dealDetails: {
+        customerName: customer.name,
+        productName: prodName,
+        quantity: qty,
+        unitPrice: sp,
+        totalDealValue,
+        grossProfit,
+        grossMargin,
+        dealSummary
+      }
+    };
+  }
+
   // --- Conversations & Messages ---
   getAllConversations() {
     return [...this.conversations];

@@ -68,6 +68,14 @@ export const whatsappService = {
     return res.data;
   },
 
+  async closeDeal(id, { finalPrice = null, quantity = null } = {}) {
+    const res = await apiRequest(`/whatsapp/conversations/${id}/close-deal`, {
+      method: 'POST',
+      body: JSON.stringify({ finalPrice, quantity })
+    });
+    return res.data;
+  },
+
   async simulateIncoming(data) {
     const res = await apiRequest('/whatsapp/simulate-incoming', {
       method: 'POST',

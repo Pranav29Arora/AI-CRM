@@ -10,7 +10,8 @@ import {
   initiateConversation,
   sendMessage,
   simulateIncoming,
-  generateAIReply
+  generateAIReply,
+  closeDeal
 } from '../controllers/whatsapp.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 
@@ -28,6 +29,7 @@ router.post('/conversations/:id/opener', sendOpeningOutreach);
 router.post('/conversations/:id/buyer-message', processBuyerMessage);
 router.post('/conversations/:id/messages', sendMessage);
 router.post('/conversations/:id/generate-reply', generateAIReply);
+router.post('/conversations/:id/close-deal', closeDeal);
 router.post('/simulate-incoming', simulateIncoming);
 
 export default router;

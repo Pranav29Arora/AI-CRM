@@ -170,3 +170,22 @@ export const generateAIReply = async (req, res, next) => {
     next(error);
   }
 };
+
+export const closeDeal = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { finalPrice, quantity } = req.body || {};
+    const result = await whatsappService.closeDeal({
+      conversationId: id,
+      finalPrice,
+      quantity
+    });
+    res.json({
+      success: true,
+      message: "Deal successfully finalized and marked Closed Won! Reflected on Customers page and Dashboard.",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
