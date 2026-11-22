@@ -8,6 +8,7 @@ import analyticsRoutes from './routes/analytics.routes.js';
 import negotiationRoutes from './routes/negotiation.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import aiRoutes from './routes/ai.routes.js';
+import systemRoutes from './routes/system.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/negotiations', negotiationRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/system', systemRoutes);
 
 // Centralized Error Handler
 app.use(errorHandler);

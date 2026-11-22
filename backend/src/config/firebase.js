@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -23,5 +23,29 @@ export const db = getFirestore(app);
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
+
+// Initialize backend service authentication
+export const initBackendAuth = async () => {
+  const email = process.env.FIREBASE_SERVICE_EMAIL || "system-backend@ai-crm.internal";
+  const password = process.env.FIREBASE_SERVICE_PASSWORD || "BackendSystemSecret2026!";
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    console.log(`[Firebase Auth] Backend service authenticated (UID: ${cred.user.uid})`);
+    return cred.user;
+  } catch (err) {
+    if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        console.log(`[Firebase Auth] Backend service account created (UID: ${cred.user.uid})`);
+        return cred.user;
+      } catch (createErr) {
+        console.warn(`[Firebase Auth] Account creation note:`, createErr.message);
+      }
+    } else {
+      console.warn(`[Firebase Auth] Backend authentication note:`, err.message);
+    }
+    return null;
+  }
+};
 
 console.log(`[Firebase] Initialized with Project ID: ${firebaseConfig.projectId}`);

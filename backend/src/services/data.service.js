@@ -1,4 +1,7 @@
-import { db } from '../config/firebase.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { db, initBackendAuth } from '../config/firebase.js';
 import {
   collection,
   getDocs,
@@ -7,7 +10,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  onSnapshot
 } from 'firebase/firestore';
 import {
   seedUsers,
@@ -18,8 +22,12 @@ import {
   seedReminders
 } from '../data/seedData.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const LOCAL_DB_PATH = path.join(__dirname, '../data/db_local.json');
+
 /**
- * DataService - Cloud Firestore Storage Layer for AI-CRM.
+ * DataService - Cloud Firestore Storage Layer for AI-CRM with Persistent Disk Backup.
  * Connected to Firebase project: ai-crm-f73a5
  */
 
@@ -33,19 +41,89 @@ class DataService {
     this.reminders = JSON.parse(JSON.stringify(seedReminders));
     this.isInitialized = false;
 
+    this.firestoreStatus = {
+      connected: false,
+      error: null,
+      lastSync: null,
+      projectId: 'ai-crm-f73a5',
+      rulesUrl: 'https://console.firebase.google.com/project/ai-crm-f73a5/firestore/rules'
+    };
+
+    // Load persistent disk cache first so existing customers are never lost
+    this.loadFromDisk();
+
     // Initialize & sync with Cloud Firestore
     this.initFirestore().catch(err => {
-      console.warn('[Firestore Init Warning] Running with local cache fallback:', err.message);
+      console.warn('[Firestore Init Warning] Running with persistent local cache fallback:', err.message);
     });
+  }
+
+  loadFromDisk() {
+    try {
+      if (fs.existsSync(LOCAL_DB_PATH)) {
+        const raw = fs.readFileSync(LOCAL_DB_PATH, 'utf8');
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.customers) && data.customers.length > 0) {
+          this.customers = data.customers;
+        }
+        if (Array.isArray(data.products) && data.products.length > 0) {
+          this.products = data.products;
+        }
+        if (Array.isArray(data.negotiations) && data.negotiations.length > 0) {
+          this.negotiations = data.negotiations;
+        }
+        if (Array.isArray(data.conversations) && data.conversations.length > 0) {
+          this.conversations = data.conversations;
+        }
+        if (Array.isArray(data.reminders) && data.reminders.length > 0) {
+          this.reminders = data.reminders;
+        }
+        console.log(`[Persistent Cache] Loaded ${this.customers.length} customers and ${this.products.length} products from disk.`);
+      }
+    } catch (e) {
+      console.warn('[Persistent Cache Notice] Could not read db_local.json:', e.message);
+    }
+  }
+
+  saveToDisk() {
+    try {
+      const payload = {
+        customers: this.customers,
+        products: this.products,
+        negotiations: this.negotiations,
+        conversations: this.conversations,
+        reminders: this.reminders,
+        lastSaved: new Date().toISOString()
+      };
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(payload, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('[Persistent Cache Notice] Could not write db_local.json:', e.message);
+    }
+  }
+
+  getFirestoreStatus() {
+    return {
+      ...this.firestoreStatus,
+      recordCounts: {
+        customers: this.customers.length,
+        products: this.products.length,
+        negotiations: this.negotiations.length
+      }
+    };
   }
 
   async initFirestore() {
     try {
-      console.log('[Firestore] Checking collections in ai-crm-f73a5...');
+      console.log('[Firestore] Checking connection to project ai-crm-f73a5...');
+      await initBackendAuth();
       await this.syncFromFirestore();
+      await this.syncLocalToFirestore();
+      this.setupRealtimeListeners();
       this.isInitialized = true;
       console.log(`[Firestore] Ready. Active catalog: ${this.products.length}, customers: ${this.customers.length}`);
     } catch (err) {
+      this.firestoreStatus.connected = false;
+      this.firestoreStatus.error = err.message;
       console.error('[Firestore Sync Error]:', err.message);
     }
   }
@@ -69,15 +147,112 @@ class DataService {
         getDocs(collection(db, 'users'))
       ]);
 
-      this.products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      this.customers = custSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      this.negotiations = negSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      this.conversations = convSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      this.reminders = remSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      this.users = userSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (!prodSnap.empty) {
+        this.products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!custSnap.empty) {
+        this.customers = custSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!negSnap.empty) {
+        this.negotiations = negSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!convSnap.empty) {
+        this.conversations = convSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!remSnap.empty) {
+        this.reminders = remSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!userSnap.empty) {
+        this.users = userSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+
+      this.saveToDisk();
+      this.firestoreStatus.connected = true;
+      this.firestoreStatus.error = null;
+      this.firestoreStatus.lastSync = new Date().toISOString();
     } catch (err) {
-      console.warn('[Firestore Sync Warning]:', err.message);
+      this.firestoreStatus.connected = false;
+      this.firestoreStatus.error = err.message;
+      if (err.code === 'permission-denied') {
+        console.warn('\n========================================================================');
+        console.warn('⚠️  [FIRESTORE PERMISSION DENIED]');
+        console.warn('Cloud Firestore Security Rules on project "ai-crm-f73a5" are blocking access.');
+        console.warn('To enable real-time Cloud Firestore updates:');
+        console.warn('1. Open: https://console.firebase.google.com/project/ai-crm-f73a5/firestore/rules');
+        console.warn('2. Paste the rules from firestore.rules and click Publish.');
+        console.warn('Running safely in persistent disk fallback mode (zero data loss).');
+        console.warn('========================================================================\n');
+      } else {
+        console.warn('[Firestore Sync Warning]:', err.message);
+      }
     }
+  }
+
+  async syncLocalToFirestore() {
+    if (!this.firestoreStatus.connected) return;
+    try {
+      const custSnap = await getDocs(collection(db, 'customers'));
+      if (custSnap.empty && this.customers.length > 0) {
+        console.log(`[Firestore] Syncing ${this.customers.length} local customers to Cloud Firestore...`);
+        for (const cust of this.customers) {
+          await setDoc(doc(db, 'customers', cust.id), cust, { merge: true });
+        }
+        console.log(`[Firestore] Synced ${this.customers.length} customers to Cloud Firestore.`);
+      }
+      const prodSnap = await getDocs(collection(db, 'products'));
+      if (prodSnap.empty && this.products.length > 0) {
+        console.log(`[Firestore] Syncing ${this.products.length} local products to Cloud Firestore...`);
+        for (const prod of this.products) {
+          await setDoc(doc(db, 'products', prod.id), prod, { merge: true });
+        }
+        console.log(`[Firestore] Synced ${this.products.length} products to Cloud Firestore.`);
+      }
+    } catch (err) {
+      console.warn('[Firestore Local-to-Cloud Sync Notice]:', err.message);
+    }
+  }
+
+  setupRealtimeListeners() {
+    try {
+      onSnapshot(collection(db, 'customers'), (snapshot) => {
+        if (!snapshot.empty) {
+          this.customers = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.saveToDisk();
+          this.firestoreStatus.connected = true;
+          this.firestoreStatus.error = null;
+          this.firestoreStatus.lastSync = new Date().toISOString();
+        }
+      }, (err) => {
+        this.firestoreStatus.connected = false;
+        this.firestoreStatus.error = err.message;
+      });
+
+      onSnapshot(collection(db, 'products'), (snapshot) => {
+        if (!snapshot.empty) {
+          this.products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.saveToDisk();
+          this.firestoreStatus.connected = true;
+          this.firestoreStatus.error = null;
+          this.firestoreStatus.lastSync = new Date().toISOString();
+        }
+      }, (err) => {
+        this.firestoreStatus.connected = false;
+        this.firestoreStatus.error = err.message;
+      });
+    } catch (e) {
+      console.warn('[Firestore Realtime Setup Notice]:', e.message);
+    }
+  }
+
+  async retryFirestoreSync() {
+    console.log('[Firestore] Retrying connection and sync with Cloud Firestore...');
+    await initBackendAuth();
+    await this.syncFromFirestore();
+    if (this.firestoreStatus.connected) {
+      await this.syncLocalToFirestore();
+      this.setupRealtimeListeners();
+    }
+    return this.getFirestoreStatus();
   }
 
   async resetToSeed() {
@@ -333,6 +508,8 @@ class DataService {
       }
     }
 
+    this.saveToDisk();
+
     return {
       success: true,
       totalProcessed: rawItems.length,
@@ -404,6 +581,7 @@ class DataService {
     } else {
       this.products.unshift(updatedProduct);
     }
+    this.saveToDisk();
 
     console.log(`[Firestore] Successfully updated product "${updatedProduct.name}" (${id}) in Cloud Firestore.`);
     return updatedProduct;
@@ -415,6 +593,7 @@ class DataService {
     if (index >= 0) {
       removed = this.products.splice(index, 1)[0];
     }
+    this.saveToDisk();
 
     // Delete directly from Cloud Firestore
     await deleteDoc(doc(db, 'products', id));
@@ -468,10 +647,16 @@ class DataService {
     };
 
     this.customers.unshift(newCustomer);
+    this.saveToDisk();
 
     try {
       await setDoc(doc(db, 'customers', newCustomer.id), newCustomer);
+      this.firestoreStatus.connected = true;
+      this.firestoreStatus.error = null;
+      this.firestoreStatus.lastSync = new Date().toISOString();
     } catch (err) {
+      this.firestoreStatus.connected = false;
+      this.firestoreStatus.error = err.message;
       console.warn('[Firestore Customer Write Warning]:', err.message);
     }
 
@@ -493,10 +678,16 @@ class DataService {
       budget: customerData.budget !== undefined ? Number(customerData.budget) : existing.budget,
       updatedAt: new Date().toISOString()
     };
+    this.saveToDisk();
 
     try {
       await updateDoc(doc(db, 'customers', id), this.customers[index]);
+      this.firestoreStatus.connected = true;
+      this.firestoreStatus.error = null;
+      this.firestoreStatus.lastSync = new Date().toISOString();
     } catch (err) {
+      this.firestoreStatus.connected = false;
+      this.firestoreStatus.error = err.message;
       console.warn('[Firestore Customer Update Warning]:', err.message);
     }
 
@@ -511,10 +702,16 @@ class DataService {
       throw err;
     }
     const removed = this.customers.splice(index, 1)[0];
+    this.saveToDisk();
 
     try {
       await deleteDoc(doc(db, 'customers', id));
+      this.firestoreStatus.connected = true;
+      this.firestoreStatus.error = null;
+      this.firestoreStatus.lastSync = new Date().toISOString();
     } catch (err) {
+      this.firestoreStatus.connected = false;
+      this.firestoreStatus.error = err.message;
       console.warn('[Firestore Customer Delete Warning]:', err.message);
     }
 

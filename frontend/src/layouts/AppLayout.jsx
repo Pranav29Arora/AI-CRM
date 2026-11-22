@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AISettingsModal } from '../components/ai/AISettingsModal';
+import { FirestoreStatusModal } from '../components/firestore/FirestoreStatusModal';
+import { apiRequest } from '../services/api';
 import {
   LayoutDashboard,
   Package,
@@ -18,7 +20,8 @@ import {
   Zap,
   Key,
   Flame,
-  ChevronRight
+  ChevronRight,
+  AlertTriangle
 } from 'lucide-react';
 
 export const AppLayout = () => {
@@ -28,6 +31,25 @@ export const AppLayout = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
+  const [isFirestoreModalOpen, setIsFirestoreModalOpen] = useState(false);
+  const [firestoreStatus, setFirestoreStatus] = useState({ connected: false });
+
+  const fetchSystemStatus = async () => {
+    try {
+      const res = await apiRequest('/system/status');
+      if (res.data?.firestore) {
+        setFirestoreStatus(res.data.firestore);
+      }
+    } catch (e) {
+      // Backend status poll note
+    }
+  };
+
+  useEffect(() => {
+    fetchSystemStatus();
+    const interval = setInterval(fetchSystemStatus, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -153,21 +175,29 @@ export const AppLayout = () => {
 
         {/* Sidebar Footer Info Card */}
         <div className="p-4 border-t border-slate-800/80 space-y-3">
-          <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs">
+          <button
+            onClick={() => setIsFirestoreModalOpen(true)}
+            className="w-full text-left p-3 rounded-xl bg-slate-950/60 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700 text-xs transition-all"
+            title="Click to view Cloud Firestore status & rules"
+          >
             <div className="flex items-center justify-between mb-1">
               <span className="flex items-center gap-1.5 font-bold text-slate-300 text-[11px]">
-                <Database className="w-3.5 h-3.5 text-emerald-400" />
+                <Database className={`w-3.5 h-3.5 ${firestoreStatus.connected ? 'text-emerald-400' : 'text-amber-400'}`} />
                 Cloud Firestore
               </span>
               <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${firestoreStatus.connected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${firestoreStatus.connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Live sync active on <span className="text-slate-300 font-mono text-[10px]">ai-crm-f73a5</span>
+              {firestoreStatus.connected ? (
+                <>Live sync active on <span className="text-slate-300 font-mono text-[10px]">ai-crm-f73a5</span></>
+              ) : (
+                <span className="text-amber-300 font-medium">Rules pending (Click to sync)</span>
+              )}
             </p>
-          </div>
+          </button>
 
           {/* User Profile Strip & Logout */}
           <div className="flex items-center justify-between pt-1">
@@ -203,10 +233,18 @@ export const AppLayout = () => {
               <span className="text-white font-bold">{currentNav.name}</span>
             </div>
             <span className="h-3.5 w-px bg-slate-800" />
-            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px] font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Firestore Realtime
-            </div>
+            <button
+              onClick={() => setIsFirestoreModalOpen(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold transition-all hover:scale-[1.02] ${
+                firestoreStatus.connected
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                  : 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:border-amber-400/50'
+              }`}
+              title="Click to check Cloud Firestore connection & rules"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${firestoreStatus.connected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              {firestoreStatus.connected ? 'Firestore Realtime' : 'Firestore Setup Needed'}
+            </button>
           </div>
 
           {/* Right Action Icons & Profile */}
@@ -309,6 +347,14 @@ export const AppLayout = () => {
         <AISettingsModal
           isOpen={isAISettingsOpen}
           onClose={() => setIsAISettingsOpen(false)}
+        />
+
+        {/* Cloud Firestore Status & Configuration Modal */}
+        <FirestoreStatusModal
+          isOpen={isFirestoreModalOpen}
+          onClose={() => setIsFirestoreModalOpen(false)}
+          status={firestoreStatus}
+          onSyncSuccess={(newStatus) => setFirestoreStatus(newStatus)}
         />
       </div>
     </div>
