@@ -78,6 +78,53 @@ export const NegotiationPage = () => {
     { id: 'hinglish', label: 'Hinglish', icon: '🇮🇳', desc: 'Natural Indian wholesale idiom' },
   ];
 
+  // Strict tiered product matching: Exact ID -> Exact SKU -> Exact Name
+  // Explicitly avoids loose substring collisions where "iPhone 15" accidentally matches "iPhone 15 Pro"
+  const findMatchingProduct = (item, prodsList) => {
+    if (!item || !prodsList || !prodsList.length) return null;
+
+    const targetId = typeof item === 'object' ? (item.id || item.productId || '') : (typeof item === 'string' ? item.trim() : '');
+    const targetSku = typeof item === 'object' && item.sku ? String(item.sku).trim().toLowerCase() : '';
+    const rawName = typeof item === 'object' ? (item.name || '') : (typeof item === 'string' ? item : '');
+    const targetName = String(rawName || '').trim().toLowerCase();
+
+    // Tier 1: Exact ID match
+    if (targetId) {
+      const match = prodsList.find(p => p.id === targetId);
+      if (match) return match;
+    }
+
+    // Tier 2: Exact SKU match (case-insensitive)
+    if (targetSku) {
+      const match = prodsList.find(p => p.sku && String(p.sku).trim().toLowerCase() === targetSku);
+      if (match) return match;
+    }
+
+    // Tier 3: Exact Name match (case-insensitive)
+    if (targetName) {
+      const match = prodsList.find(p => p.name && String(p.name).trim().toLowerCase() === targetName);
+      if (match) return match;
+    }
+
+    return null;
+  };
+
+  // Check if an inquiry item strictly matches a catalog product
+  const isItemProductMatch = (item, prod) => {
+    if (!item || !prod) return false;
+    const targetId = typeof item === 'object' ? (item.id || item.productId || '') : (typeof item === 'string' ? item.trim() : '');
+    if (targetId && prod.id === targetId) return true;
+
+    const targetSku = typeof item === 'object' && item.sku ? String(item.sku).trim().toLowerCase() : '';
+    if (targetSku && prod.sku && String(prod.sku).trim().toLowerCase() === targetSku) return true;
+
+    const rawName = typeof item === 'object' ? (item.name || '') : (typeof item === 'string' ? item : '');
+    const targetName = String(rawName || '').trim().toLowerCase();
+    if (targetName && prod.name && String(prod.name).trim().toLowerCase() === targetName) return true;
+
+    return false;
+  };
+
   // Helper to extract clean array of interested products for a customer with explicit offered price
   const getCustomerInterestedProducts = (cust, prodsList = products) => {
     if (!cust) return [];
@@ -100,13 +147,7 @@ export const NegotiationPage = () => {
 
     return list.map(item => {
       if (typeof item === 'object' && item !== null) {
-        const catalogMatch = prodsList.find(p => 
-          (item.id && p.id === item.id) ||
-          (item.productId && p.id === item.productId) ||
-          (item.sku && p.sku && item.sku.toLowerCase() === p.sku.toLowerCase()) ||
-          (item.name && p.name.toLowerCase() === item.name.toLowerCase()) ||
-          (item.name && (p.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(p.name.toLowerCase())))
-        );
+        const catalogMatch = findMatchingProduct(item, prodsList);
         const catalogPrice = Number(item.sellingPrice || catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
         // Explicit offered price if stored on item
         const explicitOffer = Number(item.offeredPrice || item.offerPrice || 0);
@@ -131,7 +172,7 @@ export const NegotiationPage = () => {
         };
       }
       const str = String(item || '').trim();
-      const catalogMatch = prodsList.find(p => p.id === str || p.name.toLowerCase() === str.toLowerCase() || p.name.toLowerCase().includes(str.toLowerCase()));
+      const catalogMatch = findMatchingProduct(str, prodsList);
       const catalogPrice = Number(catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
       const customerOffer = custBudget > 0 
         ? custBudget 
@@ -291,25 +332,17 @@ export const NegotiationPage = () => {
     if (specificProductId) {
       targetProduct = prodsList.find(p => p.id === specificProductId);
       // Check if this product is in the customer's interested items to get its specific offer and quantity
-      const specificInterest = interestedItems.find(item => 
-        item.id === specificProductId || 
-        (targetProduct && item.name?.toLowerCase() === targetProduct.name?.toLowerCase())
-      );
+      const specificInterest = interestedItems.find(item => isItemProductMatch(item, targetProduct));
       if (specificInterest) {
         if (specificInterest.offeredPrice > 0) targetOffer = specificInterest.offeredPrice;
         if (specificInterest.quantity > 0) targetQty = specificInterest.quantity;
       }
     }
 
-    // Match from customer's interested products
+    // Match from customer's interested products using strict tiered matching
     if (!targetProduct && interestedItems.length > 0) {
       const firstInterest = interestedItems[0];
-      targetProduct = prodsList.find(p => 
-        (firstInterest.id && p.id === firstInterest.id) ||
-        (firstInterest.sku && p.sku && firstInterest.sku.toLowerCase() === p.sku.toLowerCase()) ||
-        (firstInterest.name && p.name.toLowerCase() === firstInterest.name.toLowerCase()) ||
-        (firstInterest.name && (p.name.toLowerCase().includes(firstInterest.name.toLowerCase()) || firstInterest.name.toLowerCase().includes(p.name.toLowerCase())))
-      );
+      targetProduct = findMatchingProduct(firstInterest, prodsList);
 
       // Customer's explicit offered price from interested item
       if (firstInterest.offeredPrice > 0) {
@@ -375,12 +408,7 @@ export const NegotiationPage = () => {
 
   // Switch to an interested product item
   const handleSelectInterestedProductItem = (item) => {
-    const matched = products.find(p => 
-      (item.id && p.id === item.id) ||
-      (item.sku && p.sku && item.sku.toLowerCase() === p.sku.toLowerCase()) ||
-      (item.name && p.name.toLowerCase() === item.name.toLowerCase()) ||
-      (item.name && (p.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(p.name.toLowerCase())))
-    );
+    const matched = findMatchingProduct(item, products);
 
     if (matched) {
       const offer = item.offeredPrice > 0 
@@ -426,12 +454,7 @@ export const NegotiationPage = () => {
     }
 
     // Check if this product is one of the customer's interested items
-    const interestMatch = customerInterestedProducts.find(item =>
-      (item.id && item.id === prod.id) ||
-      (item.sku && prod.sku && item.sku.toLowerCase() === prod.sku.toLowerCase()) ||
-      (item.name && item.name.toLowerCase() === prod.name.toLowerCase()) ||
-      (item.name && (prod.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(prod.name.toLowerCase())))
-    );
+    const interestMatch = customerInterestedProducts.find(item => isItemProductMatch(item, prod));
 
     let newOffer = prod.preferredMinPrice || prod.targetPrice;
     let newQty = 1;
@@ -767,10 +790,7 @@ export const NegotiationPage = () => {
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {customerInterestedProducts.map((item, idx) => {
-                        const isSelected = selectedProduct && (
-                          (item.id && selectedProduct.id === item.id) ||
-                          selectedProduct.name.toLowerCase() === (item.name || '').toLowerCase()
-                        );
+                        const isSelected = selectedProduct && isItemProductMatch(item, selectedProduct);
                         return (
                           <button
                             key={idx}
@@ -817,12 +837,7 @@ export const NegotiationPage = () => {
                     <option value="">No products in catalog — add a product first</option>
                   ) : (() => {
                     const matchedInterested = customerInterestedProducts.reduce((acc, item) => {
-                      const p = products.find(prod =>
-                        (item.id && prod.id === item.id) ||
-                        (item.sku && prod.sku && item.sku.toLowerCase() === prod.sku.toLowerCase()) ||
-                        (prod.name.toLowerCase() === (item.name || '').toLowerCase()) ||
-                        (item.name && (prod.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(prod.name.toLowerCase())))
-                      );
+                      const p = findMatchingProduct(item, products);
                       if (p && !acc.some(x => x.prod.id === p.id)) {
                         acc.push({ prod: p, item });
                       }

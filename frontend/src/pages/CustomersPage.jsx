@@ -131,8 +131,12 @@ export const CustomersPage = () => {
     if (typeof prod === 'object' && prod !== null) {
       const sellingPrice = Number(prod.sellingPrice || prod.targetPrice || 0);
       let catalogMatch = null;
-      if (prod.id || prod.name) {
-        catalogMatch = availableProducts.find(p => (prod.id && p.id === prod.id) || p.name.toLowerCase() === (prod.name || '').toLowerCase());
+      if (prod.id || prod.sku || prod.name) {
+        catalogMatch = availableProducts.find(p => 
+          (prod.id && p.id === prod.id) || 
+          (prod.sku && p.sku && p.sku.toLowerCase() === prod.sku.toLowerCase()) || 
+          p.name.toLowerCase() === (prod.name || '').toLowerCase()
+        );
       }
       const finalSellingPrice = sellingPrice > 0 ? sellingPrice : Number(catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
       const explicitOffer = Number(prod.offeredPrice || prod.offerPrice || 0);
