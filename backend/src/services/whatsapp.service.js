@@ -295,9 +295,12 @@ class WhatsAppService {
 
     // Extract any new price or percentage discount offered by the buyer
     const extractedOffer = extractOfferedPriceFromText(text, offeredPrice);
-    const evaluation = negotiationService.evaluateBoundaries(product, extractedOffer, quantity);
+    const buyerMessagesCount = (conversation.messages || []).filter(m => m.sender === 'buyer' || m.sender === 'customer').length;
+    const currentRound = Math.max(1, buyerMessagesCount);
+    const evaluation = negotiationService.evaluateBoundaries(product, extractedOffer, quantity, currentRound);
     evaluation.evaluatedOffer = extractedOffer;
     evaluation.quantity = quantity;
+    evaluation.currentRound = currentRound;
 
     // 3. Autonomous AI Sales Agent generates formal, margin-defending response
     const aiStrategy = await aiService.generateAutonomousChatReply({

@@ -128,6 +128,45 @@ class DataService {
     }
   }
 
+  // Safe non-destructive merge of remote Firestore documents and local cache
+  mergeCollections(localList, remoteDocs) {
+    if (!Array.isArray(localList)) localList = [];
+    if (!remoteDocs || (Array.isArray(remoteDocs) && remoteDocs.length === 0)) return localList;
+
+    const remoteMap = new Map();
+    remoteDocs.forEach(d => {
+      const data = typeof d.data === 'function' ? { id: d.id, ...d.data() } : d;
+      if (data && data.id) {
+        remoteMap.set(data.id, data);
+      }
+    });
+
+    const merged = [];
+    const processedIds = new Set();
+
+    // 1. Process all remote items (updating if local is newer)
+    for (const [id, remoteItem] of remoteMap.entries()) {
+      const localItem = localList.find(x => x && x.id === id);
+      if (!localItem) {
+        merged.push(remoteItem);
+      } else {
+        const remoteTime = new Date(remoteItem.updatedAt || remoteItem.createdAt || 0).getTime();
+        const localTime = new Date(localItem.updatedAt || localItem.createdAt || 0).getTime();
+        merged.push(localTime > remoteTime ? localItem : remoteItem);
+      }
+      processedIds.add(id);
+    }
+
+    // 2. Preserve any local-only items that do not yet exist in remote Firestore
+    for (const localItem of localList) {
+      if (localItem && localItem.id && !processedIds.has(localItem.id)) {
+        merged.push(localItem);
+      }
+    }
+
+    return merged;
+  }
+
   async seedAllToFirestore() {
     try {
       await this.syncFromFirestore();
@@ -148,22 +187,22 @@ class DataService {
       ]);
 
       if (!prodSnap.empty) {
-        this.products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.products = this.mergeCollections(this.products, prodSnap.docs);
       }
       if (!custSnap.empty) {
-        this.customers = custSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.customers = this.mergeCollections(this.customers, custSnap.docs);
       }
       if (!negSnap.empty) {
-        this.negotiations = negSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.negotiations = this.mergeCollections(this.negotiations, negSnap.docs);
       }
       if (!convSnap.empty) {
-        this.conversations = convSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.conversations = this.mergeCollections(this.conversations, convSnap.docs);
       }
       if (!remSnap.empty) {
-        this.reminders = remSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.reminders = this.mergeCollections(this.reminders, remSnap.docs);
       }
       if (!userSnap.empty) {
-        this.users = userSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.users = this.mergeCollections(this.users, userSnap.docs);
       }
 
       this.saveToDisk();
@@ -191,22 +230,17 @@ class DataService {
   async syncLocalToFirestore() {
     if (!this.firestoreStatus.connected) return;
     try {
-      const custSnap = await getDocs(collection(db, 'customers'));
-      if (custSnap.empty && this.customers.length > 0) {
-        console.log(`[Firestore] Syncing ${this.customers.length} local customers to Cloud Firestore...`);
-        for (const cust of this.customers) {
-          await setDoc(doc(db, 'customers', cust.id), cust, { merge: true });
-        }
-        console.log(`[Firestore] Synced ${this.customers.length} customers to Cloud Firestore.`);
+      console.log(`[Firestore] Syncing ${this.customers.length} local customers to Cloud Firestore...`);
+      for (const cust of this.customers) {
+        await setDoc(doc(db, 'customers', cust.id), cust, { merge: true });
       }
-      const prodSnap = await getDocs(collection(db, 'products'));
-      if (prodSnap.empty && this.products.length > 0) {
-        console.log(`[Firestore] Syncing ${this.products.length} local products to Cloud Firestore...`);
-        for (const prod of this.products) {
-          await setDoc(doc(db, 'products', prod.id), prod, { merge: true });
-        }
-        console.log(`[Firestore] Synced ${this.products.length} products to Cloud Firestore.`);
+      console.log(`[Firestore] Synced ${this.customers.length} customers to Cloud Firestore.`);
+
+      console.log(`[Firestore] Syncing ${this.products.length} local products to Cloud Firestore...`);
+      for (const prod of this.products) {
+        await setDoc(doc(db, 'products', prod.id), prod, { merge: true });
       }
+      console.log(`[Firestore] Synced ${this.products.length} products to Cloud Firestore.`);
     } catch (err) {
       console.warn('[Firestore Local-to-Cloud Sync Notice]:', err.message);
     }
@@ -216,7 +250,7 @@ class DataService {
     try {
       onSnapshot(collection(db, 'customers'), (snapshot) => {
         if (!snapshot.empty) {
-          this.customers = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.customers = this.mergeCollections(this.customers, snapshot.docs);
           this.saveToDisk();
           this.firestoreStatus.connected = true;
           this.firestoreStatus.error = null;
@@ -229,7 +263,7 @@ class DataService {
 
       onSnapshot(collection(db, 'products'), (snapshot) => {
         if (!snapshot.empty) {
-          this.products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.products = this.mergeCollections(this.products, snapshot.docs);
           this.saveToDisk();
           this.firestoreStatus.connected = true;
           this.firestoreStatus.error = null;

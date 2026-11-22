@@ -192,7 +192,7 @@ export const NegotiationPage = () => {
   };
 
   // Synchronous, zero-delay evaluation for instant mathematical metrics
-  const computeLocalEvaluation = (product, offer, qty) => {
+  const computeLocalEvaluation = (product, offer, qty, currentRound = 1) => {
     if (!product || !offer || Number(offer) <= 0) return null;
     const cp = Number(product.costPrice) || 0;
     const sp = Number(offer) || 0;
@@ -200,6 +200,7 @@ export const NegotiationPage = () => {
     const floor = Number(product.absoluteLowerLimit) || 0;
     const pref = Number(product.preferredMinPrice) || 0;
     const target = Number(product.targetPrice) || 0;
+    const round = Math.max(1, Number(currentRound) || 1);
 
     const grossProfit = (sp - cp) * q;
     const grossMargin = sp > 0 ? Number((((sp - cp) / sp) * 100).toFixed(2)) : 0;
@@ -213,19 +214,48 @@ export const NegotiationPage = () => {
     if (sp < floor) {
       recommendation = 'REJECT';
       canApprove = false;
-      suggestedCounterPrice = pref;
+      suggestedCounterPrice = round <= 1 
+        ? Math.round((pref + target * 2) / 3 / 100) * 100 
+        : pref;
       reasoning = `Customer offer of ₹${sp.toLocaleString()} is strictly BELOW the absolute floor of ₹${floor.toLocaleString()} (Cost: ₹${cp.toLocaleString()}). Selling below floor violates margin guardrails and risks negative profit. Firm rejection required.`;
     } else if (sp >= floor && sp < pref) {
       recommendation = 'COUNTER';
-      canApprove = true;
-      suggestedCounterPrice = Math.round((sp + pref * 2) / 3 / 100) * 100;
-      if (suggestedCounterPrice < floor) suggestedCounterPrice = floor;
-      reasoning = `Customer offer of ₹${sp.toLocaleString()} is above absolute floor (₹${floor.toLocaleString()}), generating ₹${grossProfit.toLocaleString()} gross profit (${grossMargin}% margin). However, it is below preferred minimum of ₹${pref.toLocaleString()}. First attempt to counter at ₹${suggestedCounterPrice.toLocaleString()} before accepting lower margin.`;
+      canApprove = round >= 3;
+      if (round <= 1) {
+        suggestedCounterPrice = Math.round((pref + target) / 2 / 100) * 100;
+      } else if (round === 2) {
+        suggestedCounterPrice = pref;
+      } else {
+        suggestedCounterPrice = Math.max(floor, Math.round((sp + pref) / 2 / 100) * 100);
+      }
+      reasoning = `Customer offer of ₹${sp.toLocaleString()} is above absolute floor (₹${floor.toLocaleString()}), generating ₹${grossProfit.toLocaleString()} gross profit (${grossMargin}% margin). However, it is below preferred minimum of ₹${pref.toLocaleString()}. Round ${round}: Counter at ₹${suggestedCounterPrice.toLocaleString()} to defend margin corridor before accepting concessions.`;
+    } else if (sp >= pref && sp < target) {
+      if (round <= 1) {
+        // Round 1: DO NOT confirm on first try! Counter as close to target as possible to maximize profit
+        recommendation = 'COUNTER';
+        canApprove = true;
+        suggestedCounterPrice = Math.round((sp + target * 3) / 4 / 100) * 100;
+        if (suggestedCounterPrice <= sp && target > sp) {
+          suggestedCounterPrice = target;
+        }
+        const maxProfit = (target - cp) * q;
+        reasoning = `Customer offer of ₹${sp.toLocaleString()} meets the preferred baseline (gross profit ₹${grossProfit.toLocaleString()}, ${grossMargin}% margin). However, on the first attempt, DO NOT confirm immediately. Actively push towards target price (₹${target.toLocaleString()}) by countering at ₹${suggestedCounterPrice.toLocaleString()} to capture up to ₹${maxProfit.toLocaleString()} maximum profit.`;
+      } else if (round === 2) {
+        recommendation = 'COUNTER';
+        canApprove = true;
+        suggestedCounterPrice = Math.round((sp + target) / 2 / 100) * 100;
+        reasoning = `Round 2: Customer offer of ₹${sp.toLocaleString()} is viable, but continue defending margin. Split the remaining difference towards target catalog rate by countering at ₹${suggestedCounterPrice.toLocaleString()}.`;
+      } else {
+        recommendation = 'ACCEPT';
+        canApprove = true;
+        suggestedCounterPrice = sp;
+        reasoning = `Round ${round}: Customer has negotiated across multiple rounds. At ₹${sp.toLocaleString()}, the deal delivers healthy profit of ₹${grossProfit.toLocaleString()} (${grossMargin}% margin). Concession approved to secure the order and prevent buyer defection.`;
+      }
     } else {
       recommendation = 'ACCEPT';
       canApprove = true;
       suggestedCounterPrice = sp;
-      reasoning = `Customer offer of ₹${sp.toLocaleString()} meets or exceeds preferred target (₹${pref.toLocaleString()}). Expected lot gross profit is ₹${grossProfit.toLocaleString()} (${grossMargin}% margin). Excellent wholesale return — recommend instant acceptance.`;
+      reasoning = `Customer offer of ₹${sp.toLocaleString()} meets or exceeds full target catalog rate (₹${target.toLocaleString()}). Expected lot gross profit is ₹${grossProfit.toLocaleString()} (${grossMargin}% margin). Maximum profit captured — instant acceptance recommended!`;
     }
 
     return {
@@ -255,10 +285,11 @@ export const NegotiationPage = () => {
 
     const prod = products.find(p => p.id === pId);
     const q = Number(evalQty || quantity) || 1;
+    const currentRound = (negotiationRounds.length || 0) + 1;
 
     // Apply immediate local evaluation so metrics, margin, profit and recommendation update in 0ms!
     if (prod) {
-      const localEval = computeLocalEvaluation(prod, offPr, q);
+      const localEval = computeLocalEvaluation(prod, offPr, q, currentRound);
       if (localEval) {
         setEvaluationResult(prev => ({
           ...(prev || {}),

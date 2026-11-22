@@ -325,7 +325,7 @@ STRICT BUSINESS & PRICING RULES:
 8. Absolute lower floor: ₹${floor.toLocaleString()} (DO NOT MENTION COST OR FLOOR NUMBERS DIRECTLY).
 9. Rule compliance:
    - If REJECT: Politely but firmly reject the price. Explain landed cost/factory tier. Never accept below floor.
-   - If COUNTER: Politely counter at ₹${counterPrice.toLocaleString()}. Highlight genuine warranty, GST invoice, quick warehouse dispatch, and trade value.
+   - If COUNTER: Politely counter at ₹${counterPrice.toLocaleString()} (pushing as close to target catalog rate ₹${target.toLocaleString()} as possible to generate maximum profit). Do not surrender margin on early rounds. Highlight genuine warranty, GST invoice, quick warehouse dispatch, and trade value.
    - If ACCEPT: Enthusiastically confirm approval, reserve inventory, and ask for billing confirmation.
 
 Requested Primary Tone: ${tone.toUpperCase()}
@@ -695,11 +695,11 @@ GUARDRAIL ENFORCEMENT:
    - Politely but firmly reject the price. Explain that distributor landed cost does not permit sub-floor pricing.
    - Counter firmly at ₹${counterPrice.toLocaleString('en-IN')}.
    - Emphasize factory-sealed brand warranty, genuine GST input tax credit, and zero gray-market risk.
-2. If recommendation is COUNTER (offer between floor and preferred):
+2. If recommendation is COUNTER (offer below target price):
    - Acknowledge their position respectfully.
-   - Defend your margin by countering at ₹${counterPrice.toLocaleString('en-IN')}.
-   - Offer a non-price concession if appropriate (e.g. priority hub dispatch, transit insurance, or locking price for 24h).
-3. If recommendation is ACCEPT or buyer accepts deal:
+   - Do NOT accept on first try: aggressively defend margin by countering at ₹${counterPrice.toLocaleString('en-IN')} (pushing as close to target catalog price ₹${target.toLocaleString('en-IN')} as possible to generate maximum profit).
+   - Emphasize distributor value (official warranty, 100% GST invoice, immediate central warehouse allocation).
+3. If recommendation is ACCEPT and buyer explicitly confirms/accepts the deal:
    - Enthusiastically confirm at ₹${evaluatedOffer.toLocaleString('en-IN')}.
    - Request company GSTIN and billing address to issue official pro-forma invoice.
 4. Tone: ${tone}. Use natural, professional Indian B2B trade conversational style with "ji". 2-4 sentences max.
