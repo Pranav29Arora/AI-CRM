@@ -527,38 +527,51 @@ Provide a JSON response with:
    * Generates a formal Indian B2B wholesale opening message to initiate WhatsApp deal outreach.
    * "hello Name, you enquired about this product and whatsover offers"
    */
+  /**
+   * Generates a formal Indian B2B wholesale opening message to initiate WhatsApp deal outreach.
+   * Quotes the distributor's official target catalog price as the opening benchmark to begin negotiations.
+   */
   async generateOpeningOutreach({ customer, product, offeredPrice, quantity = 1, tone = 'formal' }) {
     const customerFirstName = customer?.name ? customer.name.split(' ')[0] : 'Partner';
     const customerFullName = customer?.name || 'Valued Partner';
     const productName = product?.name || 'Wholesale Lot';
     const qty = Number(quantity) || 1;
-    const price = Number(offeredPrice) || Number(customer?.budget) || Number(product?.preferredMinPrice) || Number(product?.targetPrice) || 0;
-    const formattedPrice = price.toLocaleString('en-IN');
+
+    // The distributor ALWAYS anchors the opening outreach at the target catalog price
+    const targetRate = Number(product?.targetPrice || product?.preferredMinPrice || 0);
+    const formattedTargetRate = targetRate.toLocaleString('en-IN');
+    const customerBudget = Number(offeredPrice) || Number(customer?.budget) || 0;
 
     // Attempt Live Gemini generation
     if (this.client) {
       try {
         const prompt = `You are a professional B2B wholesale account executive representing an authorized electronics and technology distributor in India.
-Formulate a formal, respectful, and engaging WhatsApp opening message to reach out to a customer who enquired about a product.
+Formulate a formal, respectful, and engaging WhatsApp opening outreach message to a retail client who enquired about stock.
+
+IMPORTANT COMMERCIAL RULE:
+The distributor ALWAYS opens negotiations by quoting the official wholesale catalog TARGET PRICE (₹${formattedTargetRate}/unit).
+DO NOT accept or confirm any discounted inquiry budget on this first outreach! This opening message sets our target rate as the official commercial benchmark, after which bilateral negotiations begin.
 
 BUYER CONTEXT:
 - Buyer Name: ${customerFullName} (First Name: ${customerFirstName})
 - Buyer Company: ${customer?.company || 'Retail Partner'}
 - Inquired Product: ${productName} (SKU: ${product?.sku || 'N/A'})
 - Requested Lot Quantity: ${qty} units
-- Budget / Inquired Price: ₹${formattedPrice} per unit
+${customerBudget > 0 ? `- Buyer Initial Inquired Budget: ₹${customerBudget.toLocaleString('en-IN')}/unit (Do not accept this yet)` : ''}
+- Official Wholesale Catalog Target Rate to Quote: ₹${formattedTargetRate} per unit
 - Tone Style: ${tone} (Options: formal, relationship, assertive, urgent, hinglish)
 
 INSTRUCTIONS:
 1. Address the buyer politely with "ji" (e.g., "Dear ${customerFirstName} ji" or "Namaste ${customerFirstName} ji").
-2. Reference their exact product enquiry and their indicated price/budget of ₹${formattedPrice}/unit for ${qty} units.
-3. State your value propositions clearly: 100% genuine factory-sealed stock, authorized manufacturer warranty, full GST input tax invoice, and priority hub dispatch.
-4. Conclude with a clear, courteous call to action (e.g., confirming delivery location, billing address, or pro-forma quotation approval).
-5. Never exceed 4-5 concise, high-impact sentences suitable for WhatsApp B2B trade.
+2. Reference their inquiry for ${qty} units of ${productName}.
+3. Firmly state our official wholesale distributor rate of ₹${formattedTargetRate} per unit for this consignment.
+4. Highlight authentic value propositions: 100% genuine factory-sealed stock, valid manufacturer warranty, full GST input tax invoice, and priority hub dispatch across India.
+5. Conclude with a clear, courteous call to action inviting them to review this rate or let us know how they wish to proceed with the lot allocation.
+6. 3-4 concise, high-impact sentences suitable for WhatsApp B2B trade.
 
 Return ONLY a valid JSON object in this exact format:
 {
-  "openingMessage": "Complete formal WhatsApp message ready to send",
+  "openingMessage": "Complete formal WhatsApp message quoting ₹${formattedTargetRate}/unit",
   "tactics": ["Tactic 1", "Tactic 2"],
   "headline": "Brief 1-sentence descriptor of this outreach"
 }`;
@@ -578,7 +591,7 @@ Return ONLY a valid JSON object in this exact format:
               tone,
               openingMessage: parsed.openingMessage,
               tactics: parsed.tactics || [],
-              headline: parsed.headline || 'Formal Wholesale Inquiry Outreach'
+              headline: parsed.headline || 'Formal Wholesale Target Outreach'
             };
           }
         }
@@ -589,29 +602,29 @@ Return ONLY a valid JSON object in this exact format:
 
     // High-fidelity Deterministic Heuristics Fallback (Zero Hallucination Guaranteed)
     let openingMessage = '';
-    let headline = 'Formal B2B Wholesale Outreach';
+    let headline = 'Formal B2B Wholesale Target Outreach';
     const tactics = [
-      'Acknowledge customer name and interested product immediately to establish trust.',
-      'Lead with authorized distributor backing, GST input tax credit, and warranty.',
-      'Seek confirmation of quantity and delivery pincode before locking allocation.'
+      `Anchor initial discussion at official catalog target rate (₹${formattedTargetRate}) to protect gross margin.`,
+      'Lead with authorized distributor backing, 100% GST input tax credit, and brand warranty.',
+      'Invite retailer commercial feedback to commence negotiation from a strong margin foundation.'
     ];
 
     if (tone === 'formal') {
       headline = 'Executive Formal B2B Opening';
-      openingMessage = `Dear ${customerFirstName} ji, thank you for reaching out to us regarding ${productName}. We have received your wholesale inquiry for ${qty} units at ₹${formattedPrice}/unit. As an authorized distributor, all our consignments come with 100% genuine manufacturer warranty and full GST input tax invoice. We would be pleased to process this order for priority hub dispatch. Could you please confirm your delivery location and billing details?`;
+      openingMessage = `Dear ${customerFirstName} ji, thank you for reaching out to us regarding your requirement for ${qty} units of ${productName} (SKU: ${product?.sku || 'N/A'}). Our official wholesale distributor rate for this consignment is ₹${formattedTargetRate} per unit, which includes 100% genuine factory-sealed stock, valid manufacturer warranty, and full GST input tax invoice. Please let us know if you would like us to reserve this lot for priority dispatch.`;
     } else if (tone === 'assertive') {
-      headline = 'Firm Commercial Outreach';
-      openingMessage = `Dear ${customerFirstName} ji, regarding your wholesale inquiry on ${productName} (${qty} units at ₹${formattedPrice}/unit): we have reserved factory-sealed stock for immediate allocation. Our pricing includes transit insurance and 100% compliant GST invoice. Please share your GSTIN and dispatch address to finalize the consignment.`;
+      headline = 'Firm Commercial Target Outreach';
+      openingMessage = `Dear ${customerFirstName} ji, regarding your wholesale inquiry for ${qty} units of ${productName}: our standard authorized distributor rate is ₹${formattedTargetRate} per unit with immediate allocation from our central hub. This quote includes full brand warranty and 100% GST input credit. Please let us know how you would like to proceed with this consignment.`;
     } else if (tone === 'urgent') {
-      headline = 'Priority Warehouse Cutoff Outreach';
-      openingMessage = `Namaste ${customerFirstName} ji, regarding your inquiry for ${qty} units of ${productName} at ₹${formattedPrice}/unit: our warehouse dispatch cutoff is approaching today. Stock is limited for this batch. If you confirm your order now, we will lock the units and arrange same-day priority dispatch with GST invoice.`;
+      headline = 'Priority Warehouse Allocation Outreach';
+      openingMessage = `Namaste ${customerFirstName} ji, regarding your wholesale inquiry for ${qty} units of ${productName}: central hub allocation is currently open at our official catalog rate of ₹${formattedTargetRate} per unit with same-day dispatch. As warehouse cutoffs approach, please confirm if we should lock this allocation with GST invoice for you today.`;
     } else if (tone === 'hinglish') {
       headline = 'B2B Trade Hinglish Outreach';
-      openingMessage = `Namaste ${customerFirstName} ji, aapka ${productName} ke ${qty} units ka inquiry mila at ₹${formattedPrice}/unit. Hamare central warehouse me stock ready hai with 100% official brand warranty aur GST billing. Batayein kab dispatch arrange karein?`;
+      openingMessage = `Namaste ${customerFirstName} ji, aapka ${productName} ke ${qty} units ka inquiry mila. Hamara official wholesale distributor rate ₹${formattedTargetRate}/unit hai, with 100% brand warranty, GST billing aur fast hub delivery. Batayein is rate par consignment book karein?`;
     } else {
       // Default: Trade / Relationship
-      headline = 'Relationship Trade Outreach';
-      openingMessage = `Namaste ${customerFirstName} ji, hope you are doing well. We noted your wholesale requirement for ${qty} units of ${productName} (Budget/Offered: ₹${formattedPrice}/unit). Stock is currently ready in our central logistics hub with full GST billing and authorized brand warranty. Let us know how you would like to proceed with the lot allocation.`;
+      headline = 'Relationship Trade Target Outreach';
+      openingMessage = `Namaste ${customerFirstName} ji, hope you are doing well. We noted your wholesale requirement for ${qty} units of ${productName}. Our official distributor rate is ₹${formattedTargetRate} per unit with 100% genuine factory-sealed stock and compliant GST input invoice. Please let us know your thoughts so we can begin processing your allocation.`;
     }
 
     return {
@@ -644,9 +657,32 @@ Return ONLY a valid JSON object in this exact format:
     const floor = evaluation?.boundaries?.absoluteLowerLimit || product?.absoluteLowerLimit || 0;
     const pref = evaluation?.boundaries?.preferredMinPrice || product?.preferredMinPrice || 0;
     const target = evaluation?.boundaries?.targetPrice || product?.targetPrice || 0;
-    const counterPrice = evaluation?.suggestedCounterPrice || pref;
+    let counterPrice = evaluation?.suggestedCounterPrice || pref;
     const recommendation = evaluation?.recommendation || 'COUNTER';
     const evaluatedOffer = evaluation?.evaluatedOffer || pref;
+
+    // Extract lowest previous distributor quote from thread messages to prevent reverse price escalation
+    let lowestPreviousQuote = target;
+    for (const msg of threadMessages) {
+      if (msg.sender === 'salesperson' || msg.sender === 'assistant' || msg.isAiGenerated) {
+        const matches = (msg.text || '').match(/₹\s*([0-9,]+)/g);
+        if (matches) {
+          for (const m of matches) {
+            const num = Number(m.replace(/[^0-9]/g, ''));
+            if (num >= floor && num <= target + 5000) {
+              if (num < lowestPreviousQuote) {
+                lowestPreviousQuote = num;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Never raise counter price higher than an earlier distributor quote in this thread
+    if (counterPrice > lowestPreviousQuote) {
+      counterPrice = lowestPreviousQuote;
+    }
 
     // Detect intent keywords from latestBuyerMessage
     const lowerMsg = (latestBuyerMessage || '').toLowerCase();
@@ -691,13 +727,14 @@ RECENT CHAT TRANSCRIPT:
 ${transcript}
 
 GUARDRAIL ENFORCEMENT:
-1. If recommendation is REJECT (offer is below floor limit ₹${floor.toLocaleString('en-IN')}):
-   - Politely but firmly reject the price. Explain that distributor landed cost does not permit sub-floor pricing.
+1. If recommendation is REJECT (offer is strictly below floor limit ₹${floor.toLocaleString('en-IN')}):
+   - Politely but firmly reject the price. Explain that this price is below our authorized floor threshold. (Never claim it is below landed cost unless offer is literally below cost ₹${(product?.costPrice || floor).toLocaleString('en-IN')}).
    - Counter firmly at ₹${counterPrice.toLocaleString('en-IN')}.
    - Emphasize factory-sealed brand warranty, genuine GST input tax credit, and zero gray-market risk.
-2. If recommendation is COUNTER (offer below target price):
+2. If recommendation is COUNTER (offer is below target catalog price ₹${target.toLocaleString('en-IN')}):
    - Acknowledge their position respectfully.
-   - Do NOT accept on first try: aggressively defend margin by countering at ₹${counterPrice.toLocaleString('en-IN')} (pushing as close to target catalog price ₹${target.toLocaleString('en-IN')} as possible to generate maximum profit).
+   - Defend margin corridor: counter at ₹${counterPrice.toLocaleString('en-IN')} (never quote higher than previous distributor quotes; push as close to target catalog price as possible to maximize profit).
+   - If offer is below preferred tier ₹${pref.toLocaleString('en-IN')}, mention that ₹${evaluatedOffer.toLocaleString('en-IN')} is below our standard wholesale margin corridor, but DO NOT say it is below landed cost.
    - Emphasize distributor value (official warranty, 100% GST invoice, immediate central warehouse allocation).
 3. If recommendation is ACCEPT and buyer explicitly confirms/accepts the deal:
    - Enthusiastically confirm at ₹${evaluatedOffer.toLocaleString('en-IN')}.
@@ -746,11 +783,11 @@ Return ONLY a valid JSON object:
       tacticApplied = 'Deal Confirmation & Pro-forma Issuance';
       replyText = `Namaste ${customerFirstName} ji, wonderful! We are delighted to finalize this order for ${quantity} units of ${productName} at ₹${evaluatedOffer.toLocaleString('en-IN')}/unit. We have earmarked this consignment in our central hub with 100% GST invoice and official brand warranty. Please share your delivery address and GSTIN so we can issue your pro-forma invoice immediately!`;
     } else if (recommendation === 'REJECT') {
-      tacticApplied = 'Floor Defense & Landed Cost Rejection';
+      tacticApplied = 'Floor Defense & Policy Rejection';
       if (detectedIntent === 'COMPETITOR_PRESSURE') {
         replyText = `Dear ${customerFirstName} ji, we understand other sources might quote aggressive rates, but please be cautious of unauthorized gray-market stocks without official brand warranty or valid GST input credit. Our lot is 100% factory-sealed with official manufacturer support. The absolute best commercial concession we can authorize is ₹${counterPrice.toLocaleString('en-IN')}/unit.`;
       } else {
-        replyText = `Dear ${customerFirstName} ji, thank you for your counter. However, that price falls below our strictly controlled factory landed distribution cost, so we cannot authorize it. The lowest possible rate we can release this batch for is ₹${counterPrice.toLocaleString('en-IN')}/unit with full GST invoice and express hub dispatch. Let me know if we can lock this in today.`;
+        replyText = `Dear ${customerFirstName} ji, thank you for your counter. However, ₹${evaluatedOffer.toLocaleString('en-IN')} falls below our minimum authorized wholesale floor limit for factory-sealed stock, so we cannot authorize it. The lowest possible rate we can release this batch for is ₹${counterPrice.toLocaleString('en-IN')}/unit with full GST invoice and express hub dispatch. Let me know if we can lock this in today.`;
       }
     } else if (detectedIntent === 'SHIPPING_REQUEST') {
       tacticApplied = 'Value Bundle (Transit Insurance & Priority Loading)';
@@ -763,8 +800,8 @@ Return ONLY a valid JSON object:
       replyText = `Namaste ${customerFirstName} ji, we fully respect market comparisons, but our stock carries direct manufacturer warranty, zero transit damage liability, and 100% compliant GST input tax credit. To respect our business relationship, we can meet you at ₹${counterPrice.toLocaleString('en-IN')}/unit for immediate dispatch.`;
     } else {
       // General Counter
-      tacticApplied = 'Corridor Counter-Offer Defense';
-      replyText = `Namaste ${customerFirstName} ji, thank you for your response. To ensure genuine distributor backing and fast dispatch, we can meet you at ₹${counterPrice.toLocaleString('en-IN')} per unit for these ${quantity} units. Stock is packed and ready for immediate transit upon your confirmation.`;
+      tacticApplied = `Margin Corridor Counter-Quote (₹${counterPrice.toLocaleString('en-IN')})`;
+      replyText = `Namaste ${customerFirstName} ji, we appreciate your counter. However, ₹${evaluatedOffer.toLocaleString('en-IN')} is below our authorized distributor margin corridor for this model. Considering your volume of ${quantity} units, the best commercial rate we can offer is ₹${counterPrice.toLocaleString('en-IN')}/unit, complete with 100% GST input tax credit and full brand warranty. Shall we proceed at this price?`;
     }
 
     return {
