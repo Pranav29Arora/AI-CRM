@@ -102,7 +102,10 @@ export const NegotiationPage = () => {
       if (typeof item === 'object' && item !== null) {
         const catalogMatch = prodsList.find(p => 
           (item.id && p.id === item.id) ||
-          (item.name && p.name.toLowerCase() === item.name.toLowerCase())
+          (item.productId && p.id === item.productId) ||
+          (item.sku && p.sku && item.sku.toLowerCase() === p.sku.toLowerCase()) ||
+          (item.name && p.name.toLowerCase() === item.name.toLowerCase()) ||
+          (item.name && (p.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(p.name.toLowerCase())))
         );
         const catalogPrice = Number(item.sellingPrice || catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
         // Explicit offered price if stored on item
@@ -113,15 +116,18 @@ export const NegotiationPage = () => {
           : (custBudget > 0 ? custBudget : (catalogMatch ? Number(catalogMatch.preferredMinPrice) : catalogPrice));
         const explicitQty = Number(item.quantity || item.qty || 1);
 
+        const resolvedId = catalogMatch ? catalogMatch.id : (item.id || item.productId || '');
+        const resolvedName = catalogMatch ? catalogMatch.name : (item.name || 'Catalog Product');
+
         return {
-          id: item.id || catalogMatch?.id || '',
-          name: item.name || catalogMatch?.name || 'Catalog Product',
+          id: resolvedId,
+          name: resolvedName,
           sellingPrice: catalogPrice,
           offeredPrice: customerOffer,
           offerPrice: customerOffer,
           quantity: explicitQty > 0 ? explicitQty : 1,
-          sku: item.sku || catalogMatch?.sku || '',
-          category: item.category || catalogMatch?.category || ''
+          sku: catalogMatch ? catalogMatch.sku : (item.sku || ''),
+          category: catalogMatch ? catalogMatch.category : (item.category || '')
         };
       }
       const str = String(item || '').trim();
@@ -274,16 +280,6 @@ export const NegotiationPage = () => {
     const cust = custsList.find(c => c.id === customerId);
     if (!cust) return;
 
-    // Check if there is an existing negotiation for this customer
-    const existingNeg = negsList.find(n => n.customerId === customerId);
-    if (existingNeg && !specificProductId) {
-      setActiveNegotiationId(existingNeg.id);
-      setNegotiationRounds(existingNeg.rounds || []);
-    } else if (!existingNeg) {
-      setActiveNegotiationId(null);
-      setNegotiationRounds([]);
-    }
-
     // Extract interested products list
     const interestedItems = getCustomerInterestedProducts(cust, prodsList);
 
@@ -310,6 +306,7 @@ export const NegotiationPage = () => {
       const firstInterest = interestedItems[0];
       targetProduct = prodsList.find(p => 
         (firstInterest.id && p.id === firstInterest.id) ||
+        (firstInterest.sku && p.sku && firstInterest.sku.toLowerCase() === p.sku.toLowerCase()) ||
         (firstInterest.name && p.name.toLowerCase() === firstInterest.name.toLowerCase()) ||
         (firstInterest.name && (p.name.toLowerCase().includes(firstInterest.name.toLowerCase()) || firstInterest.name.toLowerCase().includes(p.name.toLowerCase())))
       );
@@ -324,6 +321,9 @@ export const NegotiationPage = () => {
       }
     }
 
+    // Check if there is an existing negotiation for this customer
+    const existingNeg = negsList.find(n => n.customerId === customerId);
+
     // If still no target product, but existing negotiation exists
     if (!targetProduct && existingNeg) {
       targetProduct = prodsList.find(p => p.id === existingNeg.productId);
@@ -331,9 +331,19 @@ export const NegotiationPage = () => {
       if (existingNeg.quantity > 0) targetQty = existingNeg.quantity;
     }
 
-    // Fallback product if still none
+    // Fallback product if still none (default to first catalog SKU, never stale product from previous customer)
     if (!targetProduct && prodsList.length > 0) {
-      targetProduct = prodsList.find(p => p.id === selectedProductId) || prodsList[0];
+      targetProduct = prodsList[0];
+    }
+
+    // Determine active negotiation matching customer AND target product
+    const matchingNeg = negsList.find(n => n.customerId === customerId && targetProduct && n.productId === targetProduct.id);
+    if (matchingNeg) {
+      setActiveNegotiationId(matchingNeg.id);
+      setNegotiationRounds(matchingNeg.rounds || []);
+    } else {
+      setActiveNegotiationId(null);
+      setNegotiationRounds([]);
     }
 
     // Determine offer price from customer budget or product floor if not set
@@ -367,6 +377,7 @@ export const NegotiationPage = () => {
   const handleSelectInterestedProductItem = (item) => {
     const matched = products.find(p => 
       (item.id && p.id === item.id) ||
+      (item.sku && p.sku && item.sku.toLowerCase() === p.sku.toLowerCase()) ||
       (item.name && p.name.toLowerCase() === item.name.toLowerCase()) ||
       (item.name && (p.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(p.name.toLowerCase())))
     );
@@ -374,11 +385,21 @@ export const NegotiationPage = () => {
     if (matched) {
       const offer = item.offeredPrice > 0 
         ? item.offeredPrice 
-        : (Number(selectedCustomer?.budget) > 0 ? Number(selectedCustomer.budget) : matched.preferredMinPrice);
+        : (Number(selectedCustomer?.budget) > 0 ? Number(selectedCustomer.budget) : (matched.preferredMinPrice || matched.targetPrice));
       const itemQty = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
       setSelectedProductId(matched.id);
       setOfferPrice(offer);
       setQuantity(itemQty);
+
+      const matchingNeg = negotiationHistory.find(n => n.customerId === selectedCustomerId && n.productId === matched.id);
+      if (matchingNeg) {
+        setActiveNegotiationId(matchingNeg.id);
+        setNegotiationRounds(matchingNeg.rounds || []);
+      } else {
+        setActiveNegotiationId(null);
+        setNegotiationRounds([]);
+      }
+
       handleEvaluateDirect({
         customerId: selectedCustomerId,
         productId: matched.id,
@@ -386,6 +407,49 @@ export const NegotiationPage = () => {
         quantity: itemQty
       });
     }
+  };
+
+  // Dedicated product change handler for Select Product dropdown
+  const handleProductChange = (productId) => {
+    setSelectedProductId(productId);
+    const prod = products.find(p => p.id === productId);
+    if (!prod) return;
+
+    // Check if there is an active negotiation for this customer and this product
+    const matchingNeg = negotiationHistory.find(n => n.customerId === selectedCustomerId && n.productId === productId);
+    if (matchingNeg) {
+      setActiveNegotiationId(matchingNeg.id);
+      setNegotiationRounds(matchingNeg.rounds || []);
+    } else {
+      setActiveNegotiationId(null);
+      setNegotiationRounds([]);
+    }
+
+    // Check if this product is one of the customer's interested items
+    const interestMatch = customerInterestedProducts.find(item =>
+      (item.id && item.id === prod.id) ||
+      (item.sku && prod.sku && item.sku.toLowerCase() === prod.sku.toLowerCase()) ||
+      (item.name && item.name.toLowerCase() === prod.name.toLowerCase()) ||
+      (item.name && (prod.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(prod.name.toLowerCase())))
+    );
+
+    let newOffer = prod.preferredMinPrice || prod.targetPrice;
+    let newQty = 1;
+
+    if (interestMatch) {
+      if (interestMatch.offeredPrice > 0) newOffer = interestMatch.offeredPrice;
+      else if (Number(selectedCustomer?.budget) > 0) newOffer = Number(selectedCustomer.budget);
+      if (interestMatch.quantity > 0) newQty = interestMatch.quantity;
+    }
+
+    setOfferPrice(newOffer);
+    setQuantity(newQty);
+    handleEvaluateDirect({
+      customerId: selectedCustomerId,
+      productId: prod.id,
+      offerPrice: newOffer,
+      quantity: newQty
+    });
   };
 
   // Fetch products, customers, and active negotiations
@@ -404,13 +468,6 @@ export const NegotiationPage = () => {
 
       fetchAIStatus();
 
-      // Check if there's a pre-existing negotiation
-      if (negs.length > 0) {
-        const matching = negs[0];
-        setActiveNegotiationId(matching.id);
-        setNegotiationRounds(matching.rounds || []);
-      }
-
       // Automatically select customer and auto-populate interested product & offer price
       if (preselectedCustomerId) {
         handleCustomerSelect(preselectedCustomerId, preselectedProductId, custs, prods, negs);
@@ -420,12 +477,12 @@ export const NegotiationPage = () => {
         const targetProd = (preselectedProductId && prods.find(p => p.id === preselectedProductId)) || prods[0];
         if (targetProd) {
           setSelectedProductId(targetProd.id);
-          setOfferPrice(targetProd.preferredMinPrice);
+          setOfferPrice(targetProd.preferredMinPrice || targetProd.targetPrice);
           handleEvaluateDirect({
             customerId: '',
             productId: targetProd.id,
-            offerPrice: targetProd.preferredMinPrice,
-            quantity: 5
+            offerPrice: targetProd.preferredMinPrice || targetProd.targetPrice,
+            quantity: 1
           });
         }
       }
@@ -752,47 +809,49 @@ export const NegotiationPage = () => {
                 <label className="block text-xs font-medium text-slate-300 mb-1">Select Product</label>
                 <select
                   value={selectedProductId}
-                  onChange={(e) => {
-                    const pid = e.target.value;
-                    setSelectedProductId(pid);
-                    const p = products.find(item => item.id === pid);
-                    if (p) {
-                      const interestMatch = customerInterestedProducts.find(item =>
-                        (item.id && item.id === p.id) ||
-                        (item.name && item.name.toLowerCase() === p.name.toLowerCase())
-                      );
-                      const newOffer = interestMatch?.offeredPrice > 0
-                        ? interestMatch.offeredPrice
-                        : (Number(selectedCustomer?.budget) > 0 ? Number(selectedCustomer.budget) : p.preferredMinPrice);
-                      const newQty = Number(interestMatch?.quantity) > 0 ? Number(interestMatch.quantity) : (quantity || 1);
-                      setOfferPrice(newOffer);
-                      setQuantity(newQty);
-                      handleEvaluateDirect({
-                        customerId: selectedCustomerId,
-                        productId: pid,
-                        offerPrice: newOffer,
-                        quantity: newQty
-                      });
-                    }
-                  }}
+                  onChange={(e) => handleProductChange(e.target.value)}
                   disabled={products.length === 0}
                   className="glass-input block w-full px-3 py-2 text-xs rounded-xl bg-slate-900 border-slate-700 text-white disabled:opacity-60"
                 >
                   {products.length === 0 ? (
                     <option value="">No products in catalog — add a product first</option>
-                  ) : (
-                    products.map((p) => {
-                      const isInterested = customerInterestedProducts.some(item =>
-                        (item.id && item.id === p.id) ||
-                        (item.name && item.name.toLowerCase() === p.name.toLowerCase())
+                  ) : (() => {
+                    const matchedInterested = customerInterestedProducts.reduce((acc, item) => {
+                      const p = products.find(prod =>
+                        (item.id && prod.id === item.id) ||
+                        (item.sku && prod.sku && item.sku.toLowerCase() === prod.sku.toLowerCase()) ||
+                        (prod.name.toLowerCase() === (item.name || '').toLowerCase()) ||
+                        (item.name && (prod.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(prod.name.toLowerCase())))
                       );
-                      return (
-                        <option key={p.id} value={p.id}>
-                          {isInterested ? '★ ' : ''}{p.name} (Stock: {p.stock}){isInterested ? ' — Customer Interest' : ''}
-                        </option>
-                      );
-                    })
-                  )}
+                      if (p && !acc.some(x => x.prod.id === p.id)) {
+                        acc.push({ prod: p, item });
+                      }
+                      return acc;
+                    }, []);
+
+                    const otherProducts = products.filter(p => !matchedInterested.some(x => x.prod.id === p.id));
+
+                    return (
+                      <>
+                        {matchedInterested.length > 0 && (
+                          <optgroup label="★ Customer's Inquired Products">
+                            {matchedInterested.map(({ prod: p, item }) => (
+                              <option key={`int-${p.id}`} value={p.id}>
+                                ★ {p.name} (Inquiry Offer: ₹{Number(item.offeredPrice).toLocaleString()} • Qty: {item.quantity || 1})
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label={matchedInterested.length > 0 ? "All Other Catalog SKUs" : "Catalog SKUs"}>
+                          {otherProducts.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} (Stock: {p.stock}) — Target: ₹{Number(p.targetPrice || p.preferredMinPrice).toLocaleString()}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </>
+                    );
+                  })()}
                 </select>
               </div>
 
