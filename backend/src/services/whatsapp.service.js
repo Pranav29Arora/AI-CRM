@@ -325,16 +325,16 @@ class WhatsAppService {
     });
 
     // 5. Automatic Deal Closure Detection:
-    // If buyer accepted OR AI confirmed the order, update customer to Closed Won & record in analytics
-    const buyerAgreed = /(deal done|confirm deal|agree|send invoice|proforma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do)/i.test(text);
-    const aiConfirmed = (
-      aiStrategy.intent === 'DEAL_ACCEPTANCE' ||
-      aiStrategy.recommendation === 'ACCEPT' ||
-      /delighted to finalize|finalize this order|issue your pro-forma|concession approved/i.test(aiStrategy.replyText || '')
+    // Deal can ONLY be closed if the buyer actively agreed AND did NOT refuse/say no!
+    const buyerRejected = /^(no|nah|nahi|nope|never|not interested|deal off|cancel|drop it|leave it)\b|(\bno\b|\bnah\b|\bnahi\b|\bnot interested\b|\bcancel\b|\bdrop it\b|\bleave it\b|\bcan't do\b|\bcant do\b|\bwon't buy\b|\bwont buy\b|\bdon't want\b|\bdont want\b|\bmat bhejo\b|\bnahi chahiye\b)/i.test(text.trim());
+
+    const buyerAgreed = !buyerRejected && /(deal done|confirm deal|agree|send invoice|proforma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do)/i.test(text);
+    const aiConfirmed = !buyerRejected && (
+      (aiStrategy.intent === 'DEAL_ACCEPTANCE' && /delighted to finalize|finalize this order|issue your pro-forma/i.test(aiStrategy.replyText || ''))
     );
 
     let closedDealResult = null;
-    if ((buyerAgreed || aiConfirmed) && customer && product && extractedOffer >= (product.absoluteLowerLimit || 0)) {
+    if (!buyerRejected && (buyerAgreed || (aiConfirmed && evaluation?.canApprove)) && customer && product && extractedOffer >= (product.absoluteLowerLimit || 0)) {
       try {
         closedDealResult = await dataService.recordClosedWonDeal({
           customerId: customer.id,

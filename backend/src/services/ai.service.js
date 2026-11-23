@@ -703,9 +703,15 @@ Return ONLY a valid JSON object in this exact format:
     }
 
     // Detect intent keywords from latestBuyerMessage
-    const lowerMsg = (latestBuyerMessage || '').toLowerCase();
+    const lowerMsg = (latestBuyerMessage || '').toLowerCase().trim();
     let detectedIntent = 'PRICE_NEGOTIATION';
-    if (/(deal done|confirm deal|agree|send invoice|proforma|pi bhejo|deal lock|pack karo|confirm karo)/i.test(lowerMsg)) {
+
+    // Strict Buyer Refusal / Rejection Detection
+    const isBuyerRefusal = /^(no|nah|nahi|nope|never|not interested|deal off|cancel|drop it|leave it)\b|(\bno\b|\bnah\b|\bnahi\b|\bnot interested\b|\bcancel\b|\bdrop it\b|\bleave it\b|\bcan't do\b|\bcant do\b|\bwon't buy\b|\bwont buy\b|\bdon't want\b|\bdont want\b|\bmat bhejo\b|\bnahi chahiye\b)/i.test(lowerMsg);
+
+    if (isBuyerRefusal) {
+      detectedIntent = 'BUYER_REFUSAL';
+    } else if (/(deal done|confirm deal|agree|send invoice|proforma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do)/i.test(lowerMsg)) {
       detectedIntent = 'DEAL_ACCEPTANCE';
     } else if (/(competitor|market rate|dusra dealer|cheaper|doosre)/i.test(lowerMsg)) {
       detectedIntent = 'COMPETITOR_PRESSURE';
@@ -747,21 +753,25 @@ RECENT CHAT TRANSCRIPT:
 ${transcript}
 
 GUARDRAIL ENFORCEMENT & COMMERCIAL STRATEGY:
-1. If recommendation is REJECT (offer is strictly below floor limit ₹${floor.toLocaleString('en-IN')}):
+1. CRITICAL: If the buyer explicitly REFUSES or says "NO", "not interested", "nahi", "cancel" (Detected Intent: BUYER_REFUSAL):
+   - Under NO CIRCUMSTANCES should you accept, confirm, or finalize the deal! Do NOT generate pro-forma invoices or celebrate acceptance.
+   - Respectfully acknowledge their decision: "Namaste ji, we understand and respect your decision. If our rate doesn't fit your procurement right now, no problem at all..."
+   - Leave the door open for future requirements or ask if they have another requirement in mind.
+2. If recommendation is REJECT (offer is strictly below floor limit ₹${floor.toLocaleString('en-IN')}):
    - Politely but firmly reject the price. Explain that this price is below our authorized floor threshold. (Never claim it is below landed cost unless offer is literally below cost ₹${(product?.costPrice || floor).toLocaleString('en-IN')}).
    - Counter firmly at ₹${counterPrice.toLocaleString('en-IN')}.
    - Emphasize factory-sealed brand warranty, genuine GST input tax credit, and zero gray-market risk.
-2. If recommendation is COUNTER (offer is below target catalog price ₹${target.toLocaleString('en-IN')}):
+3. If recommendation is COUNTER (offer is below target catalog price ₹${target.toLocaleString('en-IN')}):
    - Acknowledge their message respectfully.
    ${isTargetCounter
      ? `- MANDATORY RULE: The counter price to quote is our official target catalog price of ₹${target.toLocaleString('en-IN')}. Firmly defend this full rate. DO NOT give any discount on early attempts. Explain that ₹${target.toLocaleString('en-IN')} is our official authorized rate with 100% genuine factory warranty, compliant GST input tax credit, and priority hub dispatch. Ask if they can confirm at ₹${target.toLocaleString('en-IN')}.`
      : `- MANDATORY RULE: Counter at EXACTLY ₹${counterPrice.toLocaleString('en-IN')}. Note that while their offer of ₹${evaluatedOffer.toLocaleString('en-IN')} is below our standard wholesale margin corridor, to support our business relationship, we are making a special commercial concession to meet them at ₹${counterPrice.toLocaleString('en-IN')} (retaining the majority of margin while granting a real concession). Emphasize full GST invoice and official brand warranty.`
    }
    - NEVER quote a price lower than ₹${counterPrice.toLocaleString('en-IN')} or higher than ₹${lowestPreviousQuote.toLocaleString('en-IN')}.
-3. If recommendation is ACCEPT and buyer explicitly confirms/accepts the deal:
+4. If recommendation is ACCEPT and buyer EXPLICITLY and ACTIVELY confirms/accepts the deal (Intent is DEAL_ACCEPTANCE, and buyer did NOT say no/refuse):
    - Enthusiastically confirm at ₹${evaluatedOffer.toLocaleString('en-IN')}.
    - Request company GSTIN and billing address to issue official pro-forma invoice.
-4. Tone: ${tone}. Use natural, professional Indian B2B trade conversational style with "ji". 2-4 sentences max.
+5. Tone: ${tone}. Use natural, professional Indian B2B trade conversational style with "ji". 2-4 sentences max.
 
 Return ONLY a valid JSON object:
 {
@@ -801,7 +811,10 @@ Return ONLY a valid JSON object:
     let replyText = '';
     let tacticApplied = '';
 
-    if (detectedIntent === 'DEAL_ACCEPTANCE' || recommendation === 'ACCEPT') {
+    if (detectedIntent === 'BUYER_REFUSAL' || isBuyerRefusal) {
+      tacticApplied = 'Respectful Refusal Acknowledgement';
+      replyText = `Namaste ${customerFirstName} ji, we completely understand and respect your decision. If our rate of ₹${counterPrice.toLocaleString('en-IN')} doesn't fit your procurement budget right now, no problem at all. We will keep you updated on upcoming inventory allocations. Please feel free to reach out whenever you have fresh requirements!`;
+    } else if (detectedIntent === 'DEAL_ACCEPTANCE' && (recommendation === 'ACCEPT' || evaluation?.canApprove) && !isBuyerRefusal) {
       tacticApplied = 'Deal Confirmation & Pro-forma Issuance';
       replyText = `Namaste ${customerFirstName} ji, wonderful! We are delighted to finalize this order for ${quantity} units of ${productName} at ₹${evaluatedOffer.toLocaleString('en-IN')}/unit. We have earmarked this consignment in our central hub with 100% GST invoice and official brand warranty. Please share your delivery address and GSTIN so we can issue your pro-forma invoice immediately!`;
     } else if (recommendation === 'REJECT') {
