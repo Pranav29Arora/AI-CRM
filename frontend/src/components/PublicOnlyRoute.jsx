@@ -20,9 +20,7 @@ export const PublicOnlyRoute = ({ children }) => {
     );
   }
 
-  if (user) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
+  // Allow login and signup pages to be accessible at all times
+  // Users who are logged in can switch accounts or review their active credentials
   return children;
 };

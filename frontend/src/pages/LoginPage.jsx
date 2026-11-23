@@ -33,7 +33,7 @@ export const LoginPage = () => {
   const [resetSuccess, setResetSuccess] = useState('');
   const [resetError, setResetError] = useState('');
 
-  const { login, loginWithGoogle, sendPasswordReset } = useAuth();
+  const { user, login, loginWithGoogle, sendPasswordReset } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -256,6 +256,23 @@ export const LoginPage = () => {
                 : 'Continue managing your customers and deals.'}
             </p>
           </div>
+
+          {/* Active Session Notice if already logged in */}
+          {user && (
+            <div className="mb-6 p-3.5 rounded-2xl bg-brand-950/40 border border-brand-500/30 flex items-center justify-between text-xs animate-fade-in shadow-inner">
+              <div className="min-w-0 pr-2">
+                <span className="text-[10px] text-brand-400 block font-semibold uppercase tracking-wider">Active Session Detected:</span>
+                <span className="font-bold text-white truncate block">{user.name} ({user.email})</span>
+              </div>
+              <Link
+                to="/dashboard"
+                className="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs whitespace-nowrap shadow-md shadow-brand-500/20 flex items-center gap-1.5 transition-all hover:scale-[1.02]"
+              >
+                <span>Dashboard</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
 
           {/* ================= FORGOT PASSWORD VIEW ================= */}
           {showForgotPassword ? (

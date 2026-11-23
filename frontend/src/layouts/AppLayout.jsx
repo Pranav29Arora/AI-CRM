@@ -11,6 +11,8 @@ import {
   Sparkles,
   MessageSquare,
   LogOut,
+  LogIn,
+  UserPlus,
   Menu,
   X,
   Database,
@@ -51,9 +53,13 @@ export const AppLayout = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.warn('Logout notice:', e);
+    }
+    navigate('/login', { replace: true });
   };
 
   const navLinks = [
@@ -324,6 +330,20 @@ export const AppLayout = () => {
                     className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-brand-400" /> View Public Landing Page
+                  </Link>
+                  <Link
+                    to="/login"
+                    onClick={() => setProfileDropdownOpen(false)}
+                    className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-brand-400" /> Switch / Log In to Account
+                  </Link>
+                  <Link
+                    to="/signup"
+                    onClick={() => setProfileDropdownOpen(false)}
+                    className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-brand-400" /> Create New Account
                   </Link>
                   <div className="border-t border-slate-800 my-1" />
                   <button
