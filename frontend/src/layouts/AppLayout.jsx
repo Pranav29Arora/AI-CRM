@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AISettingsModal } from '../components/ai/AISettingsModal';
 import { FirestoreStatusModal } from '../components/firestore/FirestoreStatusModal';
+import { UserProfileModal } from '../components/profile/UserProfileModal';
 import { apiRequest } from '../services/api';
 import {
   LayoutDashboard,
@@ -23,7 +24,8 @@ import {
   Key,
   Flame,
   ChevronRight,
-  AlertTriangle
+  AlertTriangle,
+  User
 } from 'lucide-react';
 
 export const AppLayout = () => {
@@ -32,9 +34,22 @@ export const AppLayout = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
   const [isFirestoreModalOpen, setIsFirestoreModalOpen] = useState(false);
   const [firestoreStatus, setFirestoreStatus] = useState({ connected: false });
+
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchSystemStatus = async () => {
     try {
@@ -84,12 +99,25 @@ export const AppLayout = () => {
             AI-CRM
           </span>
         </div>
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-        >
-          {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="flex items-center gap-2">
+          {user && (
+            <button
+              onClick={() => setIsProfileModalOpen(true)}
+              className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-800/80 border border-slate-700/80 text-xs text-slate-200 hover:border-brand-500/50 transition-colors"
+              title="Click to view profile & log out"
+            >
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-xs font-bold text-white">
+                {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+            </button>
+          )}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </header>
 
       {/* Sidebar Desktop */}
@@ -207,19 +235,24 @@ export const AppLayout = () => {
 
           {/* User Profile Strip & Logout */}
           <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border border-brand-400/40">
+            <button
+              type="button"
+              onClick={() => setIsProfileModalOpen(true)}
+              className="flex items-center gap-2.5 min-w-0 text-left p-1.5 -ml-1 rounded-xl hover:bg-slate-800/80 transition-colors flex-1 mr-1.5 group"
+              title="Click to view User Profile & Account details"
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border border-brand-400/40 group-hover:scale-105 transition-transform flex-shrink-0">
                 {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
               </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-200 truncate">{user?.name || 'Sales Director'}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">{user?.name || 'Sales Director'}</p>
                 <p className="text-[10px] text-slate-400 truncate">{user?.company || 'Wholesale Enterprise'}</p>
               </div>
-            </div>
+            </button>
             <button
               onClick={handleLogout}
-              title="Sign Out"
-              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+              title="Log Out of AI-CRM"
+              className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors flex items-center gap-1"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -275,10 +308,11 @@ export const AppLayout = () => {
             </button>
 
             {/* Profile Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
                 className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-800/60 border border-transparent hover:border-slate-700/80 transition-colors"
+                title="Account menu"
               >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border border-brand-400/40">
                   {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
@@ -292,17 +326,37 @@ export const AppLayout = () => {
 
               {profileDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-2 z-50 animate-fade-in">
-                  <div className="px-3 py-2 border-b border-slate-800 mb-1">
-                    <p className="text-xs font-bold text-white">{user?.name}</p>
+                  <div
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="px-3 py-2 border-b border-slate-800 mb-1 cursor-pointer hover:bg-slate-800/60 rounded-xl transition-colors group"
+                    title="Click to view full user profile"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-white group-hover:text-brand-300 transition-colors">{user?.name || "User"}</p>
+                      <span className="text-[9px] font-bold text-brand-400 uppercase tracking-wider bg-brand-500/10 px-1.5 py-0.5 rounded border border-brand-500/20">Profile</span>
+                    </div>
                     <p className="text-[11px] text-slate-400 truncate">{user?.email}</p>
-                    <p className="text-[10px] text-brand-400 mt-0.5 font-medium">{user?.role} • {user?.company}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5 font-medium truncate">{user?.role} • {user?.company}</p>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-brand-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2 font-medium"
+                  >
+                    <User className="w-3.5 h-3.5 text-brand-400" /> View Account Profile
+                  </button>
                   <button
                     onClick={() => {
                       setProfileDropdownOpen(false);
                       setIsAISettingsOpen(true);
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-brand-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2"
+                    className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2"
                   >
                     <Key className="w-3.5 h-3.5 text-brand-400" /> Configure Gemini AI Model
                   </button>
@@ -347,10 +401,13 @@ export const AppLayout = () => {
                   </Link>
                   <div className="border-t border-slate-800 my-1" />
                   <button
-                    onClick={handleLogout}
-                    className="w-full text-left px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition-colors flex items-center gap-2"
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full text-left px-3 py-2.5 text-xs text-rose-400 hover:text-white hover:bg-rose-600 rounded-xl transition-colors flex items-center gap-2 font-bold shadow-sm"
                   >
-                    <LogOut className="w-3.5 h-3.5" /> Sign Out
+                    <LogOut className="w-3.5 h-3.5" /> Log Out
                   </button>
                 </div>
               )}
@@ -367,6 +424,15 @@ export const AppLayout = () => {
         <AISettingsModal
           isOpen={isAISettingsOpen}
           onClose={() => setIsAISettingsOpen(false)}
+        />
+
+        {/* User Profile & Account Details Modal */}
+        <UserProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          user={user}
+          onLogout={handleLogout}
+          onOpenAISettings={() => setIsAISettingsOpen(true)}
         />
 
         {/* Cloud Firestore Status & Configuration Modal */}

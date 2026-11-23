@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -24,13 +24,38 @@ import {
   Sliders,
   AlertTriangle,
   ArrowUpRight,
-  CheckCheck
+  CheckCheck,
+  LogOut,
+  ChevronDown,
+  LayoutDashboard
 } from 'lucide-react';
 
 export const LandingPage = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const profileRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.warn('Logout notice:', e);
+    }
+    setProfileDropdownOpen(false);
+    navigate('/login');
+  };
 
   // Interactive Live Demo Playground State for Hero
   const [demoOffer, setDemoOffer] = useState(54000);
@@ -146,7 +171,7 @@ export const LandingPage = () => {
             </button>
           </nav>
 
-          {/* Right Side: Log In, Sign Up, and Dashboard buttons */}
+          {/* Right Side: Log In, Sign Up, and Dashboard/Profile buttons */}
           <div className="hidden md:flex items-center gap-3">
             <Link
               to="/login"
@@ -161,13 +186,53 @@ export const LandingPage = () => {
               Sign Up
             </Link>
             {user ? (
-              <Link
-                to="/dashboard"
-                className="px-5 py-2.5 text-xs font-bold bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-all hover:scale-[1.02] flex items-center gap-1.5"
-              >
-                <span>Dashboard</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/dashboard"
+                  className="px-4 py-2.5 text-xs font-bold bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-all hover:scale-[1.02] flex items-center gap-1.5"
+                >
+                  <span>Dashboard</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+
+                {/* Profile Pill & Dropdown with Log Out */}
+                <div className="relative" ref={profileRef}>
+                  <button
+                    onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                    className="flex items-center gap-2 p-1.5 pr-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 text-xs transition-colors"
+                    title="Profile & Session Menu"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-xs font-bold text-white shadow-sm">
+                      {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                    <span className="font-semibold text-slate-200 hidden lg:inline max-w-[100px] truncate">{user?.name}</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  </button>
+
+                  {profileDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-60 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-2 z-50 animate-fade-in">
+                      <div className="px-3 py-2 border-b border-slate-800 mb-1">
+                        <p className="text-xs font-bold text-white truncate">{user?.name}</p>
+                        <p className="text-[11px] text-slate-400 truncate">{user?.email}</p>
+                        <p className="text-[10px] text-brand-400 font-medium mt-0.5">{user?.role} • {user?.company}</p>
+                      </div>
+                      <Link
+                        to="/dashboard"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-2 font-medium"
+                      >
+                        <LayoutDashboard className="w-3.5 h-3.5 text-brand-400" /> Go to Dashboard
+                      </Link>
+                      <button
+                        onClick={handleLogout}
+                        className="w-full text-left px-3 py-2 text-xs text-rose-400 hover:text-white hover:bg-rose-600 rounded-xl transition-colors flex items-center gap-2 font-bold mt-1 shadow-sm"
+                      >
+                        <LogOut className="w-3.5 h-3.5" /> Log Out
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
               <Link
                 to="/signup"
@@ -230,13 +295,32 @@ export const LandingPage = () => {
                 Sign Up
               </Link>
               {user && (
-                <Link
-                  to="/dashboard"
-                  className="w-full text-center py-2.5 text-xs font-bold bg-brand-600 text-white rounded-xl shadow-lg shadow-brand-500/25 flex items-center justify-center gap-1.5"
-                >
-                  <span>Go to Dashboard</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5 mt-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-xs font-bold text-white shadow-sm flex-shrink-0">
+                      {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-white truncate">{user?.name}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    <Link
+                      to="/dashboard"
+                      className="py-2 text-center text-xs font-bold bg-brand-600 text-white rounded-xl shadow-md flex items-center justify-center gap-1"
+                    >
+                      <span>Dashboard</span>
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="py-2 text-center text-xs font-bold bg-rose-600/20 text-rose-300 hover:bg-rose-600 hover:text-white rounded-xl border border-rose-500/30 flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Log Out</span>
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
