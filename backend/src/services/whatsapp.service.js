@@ -418,6 +418,18 @@ class WhatsAppService {
       throw err;
     }
 
+    let resolvedProdId = productId || customer?.interestedProducts?.[0]?.productId || customer?.interestedProducts?.[0]?.id || null;
+    if (!resolvedProdId && customer?.interestedProducts?.[0]) {
+      const matched = dataService.getAllProducts().find(p =>
+        p.sku === customer.interestedProducts[0].sku ||
+        p.name.toLowerCase() === customer.interestedProducts[0].name?.toLowerCase()
+      );
+      if (matched) resolvedProdId = matched.id;
+    }
+    if (!resolvedProdId && dataService.getAllProducts().length > 0) {
+      resolvedProdId = dataService.getAllProducts()[0].id;
+    }
+
     if (!conv) {
       const convId = `conv-${Date.now()}`;
       conv = {
@@ -425,15 +437,17 @@ class WhatsAppService {
         customerId: customer.id,
         customerName: customer.name,
         customerPhone: customer.phone || "+91 98000 00000",
-        productId: productId || customer?.interestedProducts?.[0]?.productId || customer?.interestedProducts?.[0]?.id || null,
+        productId: resolvedProdId,
         unreadCount: 0,
         lastMessage: "Conversation initiated",
         lastMessageTimestamp: new Date().toISOString(),
         messages: []
       };
       dataService.conversations.unshift(conv);
-    } else if (productId && !conv.productId) {
-      conv.productId = productId;
+      dataService.saveLocalDB();
+    } else if (resolvedProdId && !conv.productId) {
+      conv.productId = resolvedProdId;
+      dataService.saveLocalDB();
     }
 
     return conv;

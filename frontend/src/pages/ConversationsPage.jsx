@@ -110,9 +110,23 @@ export const ConversationsPage = () => {
       setActiveConv(detailed);
       setConvContext(context);
 
-      // If conversation has 0 messages, generate the formal AI Opener preview
+      // If conversation has 0 messages, automatically generate and dispatch formal AI Opener outreach
       if (detailed && (!detailed.messages || detailed.messages.length === 0)) {
-        loadAiOpener(convId, draftTone);
+        try {
+          const sent = await whatsappService.sendOpeningOutreach(convId, { tone: draftTone });
+          const updatedConv = sent?.conversation || sent?.data?.conversation || sent?.data;
+          if (updatedConv && updatedConv.messages) {
+            setActiveConv(updatedConv);
+            setConversations(prev =>
+              prev.map(c => (c.id === convId ? updatedConv : c))
+            );
+          } else {
+            loadAiOpener(convId, draftTone);
+          }
+        } catch (dispatchErr) {
+          console.warn('Auto dispatch opening outreach notice:', dispatchErr);
+          loadAiOpener(convId, draftTone);
+        }
       }
     } catch (err) {
       console.error('Failed to load conversation details:', err);
@@ -162,14 +176,37 @@ export const ConversationsPage = () => {
         }
       }
 
+      let targetConv = null;
+      if (preselectedCustomerId) {
+        const match = targetList.find(c => c.customerId === preselectedCustomerId);
+        if (match) {
+          targetConv = match;
+        } else {
+          // Conversation for this preselected customer not in targetList yet, initiate it!
+          try {
+            const custMatch = custs.find(c => c.id === preselectedCustomerId);
+            const prodId = custMatch?.interestedProducts?.[0]?.id || custMatch?.interestedProducts?.[0]?.productId || prods[0]?.id;
+            const newConv = await whatsappService.initiateConversation({
+              customerId: preselectedCustomerId,
+              productId: prodId
+            });
+            if (newConv) {
+              targetList.unshift(newConv);
+              targetConv = newConv;
+            }
+          } catch (initErr) {
+            console.warn('Initiate conversation warning:', initErr.message);
+          }
+        }
+      }
+
+      if (!targetConv && targetList.length > 0) {
+        targetConv = targetList[0];
+      }
+
       setConversations(targetList);
 
-      if (targetList.length > 0) {
-        let targetConv = targetList[0];
-        if (preselectedCustomerId) {
-          const match = targetList.find(c => c.customerId === preselectedCustomerId);
-          if (match) targetConv = match;
-        }
+      if (targetConv) {
         setActiveConvId(targetConv.id);
         await loadConvDetails(targetConv.id);
       }
@@ -182,7 +219,7 @@ export const ConversationsPage = () => {
 
   useEffect(() => {
     loadConversations();
-  }, []);
+  }, [preselectedCustomerId]);
 
   useEffect(() => {
     scrollToBottom();

@@ -101,6 +101,10 @@ class DataService {
     }
   }
 
+  saveLocalDB() {
+    this.saveToDisk();
+  }
+
   getFirestoreStatus() {
     return {
       ...this.firestoreStatus,
@@ -970,6 +974,8 @@ class DataService {
     conversation.messages.push(newMessage);
     conversation.lastMessage = newMessage.text;
     conversation.lastMessageTimestamp = newMessage.timestamp;
+
+    this.saveLocalDB();
 
     try {
       await setDoc(doc(db, 'conversations', conversationId), conversation);

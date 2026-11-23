@@ -277,7 +277,7 @@ export const CustomersPage = () => {
         });
       }
 
-      await customerService.createCustomer({
+      const createdCustomer = await customerService.createCustomer({
         name: formData.name,
         company: formData.company,
         phone: formData.phone,
@@ -291,6 +291,12 @@ export const CustomersPage = () => {
 
       setIsAddModalOpen(false);
       fetchCustomers();
+
+      const createdCustId = createdCustomer?.id || createdCustomer?.data?.id;
+      if (createdCustId) {
+        // Automatically start/open the chat and message on WhatsApp Hub
+        navigate(`/conversations?customerId=${createdCustId}`);
+      }
     } catch (err) {
       setFormError(err.message || 'Failed to create customer.');
     } finally {

@@ -1,4 +1,5 @@
 import { dataService } from '../services/data.service.js';
+import { whatsappService } from '../services/whatsapp.service.js';
 
 export const getAllCustomers = (req, res, next) => {
   try {
@@ -66,10 +67,35 @@ export const createCustomer = async (req, res, next) => {
       interestedProducts
     });
 
+    // Automatically initiate WhatsApp conversation & send initial outreach message
+    let conversation = null;
+    let openingOutreach = null;
+    try {
+      const primaryProduct = (newCustomer.interestedProducts && newCustomer.interestedProducts.length > 0)
+        ? newCustomer.interestedProducts[0]
+        : null;
+      const productId = primaryProduct?.id || primaryProduct?.productId || null;
+
+      conversation = await whatsappService.createOrGetConversationForCustomer({
+        customerId: newCustomer.id,
+        productId
+      });
+
+      if (conversation) {
+        openingOutreach = await whatsappService.sendOpeningOutreach(conversation.id, {
+          tone: 'formal'
+        });
+      }
+    } catch (chatErr) {
+      console.warn('[Auto WhatsApp Chat Initiation Warning]:', chatErr.message);
+    }
+
     res.status(201).json({
       success: true,
-      message: "Customer created successfully in Cloud Firestore.",
-      data: newCustomer
+      message: "Customer created and WhatsApp conversation started successfully.",
+      data: newCustomer,
+      conversation: conversation || null,
+      openingOutreach: openingOutreach || null
     });
   } catch (error) {
     next(error);
