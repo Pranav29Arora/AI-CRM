@@ -498,10 +498,10 @@ export const CustomersPage = () => {
           <div>
             <label className="block text-xs font-bold text-white flex items-center gap-1.5">
               <Package className="w-3.5 h-3.5 text-brand-400" />
-              Interested Products, Order Quantity & Customer Offered Rates
+              Interested Products & Order Quantity
             </label>
             <p className="text-[11px] text-slate-400">
-              Select products from catalog. Specify required quantity and customer offered rates to power the AI Negotiation Engine.
+              Select products from catalog and specify required order quantity.
             </p>
           </div>
           <span className="text-[11px] text-emerald-400 font-mono font-bold self-start sm:self-auto px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
@@ -513,7 +513,7 @@ export const CustomersPage = () => {
         {(formData.selectedProducts || []).length > 0 && (
           <div className="space-y-1.5">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Selected Products (Order Quantity, Catalog Price & Customer Offer):
+              Selected Products (Order Quantity & Catalog Price):
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {formData.selectedProducts.map((p, idx) => (
@@ -522,7 +522,7 @@ export const CustomersPage = () => {
                   className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/80 border border-brand-500/30 text-xs text-white"
                 >
                   <div className="min-w-0 pr-1">
-                    <span className="font-semibold text-slate-100 truncate block max-w-[130px]" title={p.name}>
+                    <span className="font-semibold text-slate-100 truncate block max-w-[150px]" title={p.name}>
                       {p.name}
                     </span>
                     <span className="text-[10px] text-slate-500 font-mono">
@@ -532,7 +532,7 @@ export const CustomersPage = () => {
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {/* Quantity Input */}
-                    <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-1 rounded-lg border border-slate-700" title="Order Quantity">
+                    <div className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700" title="Order Quantity">
                       <span className="text-[10px] text-brand-300 font-bold uppercase">Qty:</span>
                       <input
                         type="number"
@@ -545,25 +545,7 @@ export const CustomersPage = () => {
                           updated[idx] = { ...updated[idx], quantity: val };
                           setFormData({ ...formData, selectedProducts: updated });
                         }}
-                        className="w-12 px-1 py-0.5 text-xs font-mono bg-transparent text-white font-bold focus:outline-none"
-                      />
-                    </div>
-
-                    {/* Customer Offered Price Input */}
-                    <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-1 rounded-lg border border-slate-700" title="Customer Offered Price per Unit">
-                      <span className="text-[10px] text-amber-300 font-bold uppercase">Offer: ₹</span>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Offer ₹"
-                        value={p.offeredPrice !== undefined ? p.offeredPrice : ''}
-                        onChange={(e) => {
-                          const val = e.target.value === '' ? '' : Number(e.target.value);
-                          const updated = [...formData.selectedProducts];
-                          updated[idx] = { ...updated[idx], offeredPrice: val };
-                          setFormData({ ...formData, selectedProducts: updated });
-                        }}
-                        className="w-20 px-1 py-0.5 text-xs font-mono bg-transparent text-emerald-300 font-bold focus:outline-none"
+                        className="w-14 px-1 py-0.5 text-xs font-mono bg-transparent text-white font-bold focus:outline-none"
                       />
                     </div>
 
