@@ -709,9 +709,27 @@ Return ONLY a valid JSON object in this exact format:
     // Strict Buyer Refusal / Rejection Detection
     const isBuyerRefusal = /^(no|nah|nahi|nope|never|not interested|deal off|cancel|drop it|leave it)\b|(\bno\b|\bnah\b|\bnahi\b|\bnot interested\b|\bcancel\b|\bdrop it\b|\bleave it\b|\bcan't do\b|\bcant do\b|\bwon't buy\b|\bwont buy\b|\bdon't want\b|\bdont want\b|\bmat bhejo\b|\bnahi chahiye\b)/i.test(lowerMsg);
 
+    // Natural Deal Acceptance & Affirmation Detection
+    const hasAcceptanceWords = /(deal done|confirm deal|agree|agreed|accept|accepted|send invoice|proforma|pro-forma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do|lock it in|book it|book kar do|proceed|go ahead|lets do it|let's do it|done hai|theek hai|chalega|bhej do|le lunga|aa raha hu)/i.test(lowerMsg);
+    const hasPickupIntent = /(collect|pickup|pick up|take delivery|collection|coming to pick|be there to collect)/i.test(lowerMsg);
+    const isAffirmative = /^(yes|sure|ok|okay|yep|yeah|fine|perfect|great|super|alright|done|haan|ha ji|yes sure|sure thing|sounds good)[\s!.,]*$/i.test(lowerMsg) ||
+      /^(yes|sure|okay|ok|alright|perfect),?\s*(i will|i'll|we will|we'll|let's|lets|please|proceed|send|issue|generate|can collect|will collect|there to collect)/i.test(lowerMsg);
+    const isAffirmativeWithPickup = hasPickupIntent && /(sure|yes|ok|okay|will|ready|soon|coming|i am|i will|be there)/i.test(lowerMsg);
+    const hasCounterOfferOrCondition = /(\bbut\b|\bhowever\b|\bif you can\b|\bcan you do\b|\bdiscount\b|\bkam\b|\bless\b)/i.test(lowerMsg);
+
+    const lastSalesMsg = [...threadMessages].reverse().find(m => m.sender === 'salesperson' || m.sender === 'assistant' || m.isAiGenerated);
+    const salesAskedToClose = lastSalesMsg && /(pro-forma|invoice|lock|proceed|book|confirm|shall we|shall i|let me know if we can lock|at ₹)/i.test(lastSalesMsg.text || '');
+
+    const isDealAcceptance = !isBuyerRefusal && !hasCounterOfferOrCondition && (
+      hasAcceptanceWords ||
+      isAffirmative ||
+      isAffirmativeWithPickup ||
+      (salesAskedToClose && (hasPickupIntent || /^(yes|sure|ok|okay|done|yep|yeah|fine|proceed|sounds good|great|alright)/i.test(lowerMsg)))
+    );
+
     if (isBuyerRefusal) {
       detectedIntent = 'BUYER_REFUSAL';
-    } else if (/(deal done|confirm deal|agree|send invoice|proforma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do)/i.test(lowerMsg)) {
+    } else if (isDealAcceptance) {
       detectedIntent = 'DEAL_ACCEPTANCE';
     } else if (/(competitor|market rate|dusra dealer|cheaper|doosre)/i.test(lowerMsg)) {
       detectedIntent = 'COMPETITOR_PRESSURE';
@@ -768,8 +786,9 @@ GUARDRAIL ENFORCEMENT & COMMERCIAL STRATEGY:
      : `- MANDATORY RULE: Counter at EXACTLY ₹${counterPrice.toLocaleString('en-IN')}. Note that while their offer of ₹${evaluatedOffer.toLocaleString('en-IN')} is below our standard wholesale margin corridor, to support our business relationship, we are making a special commercial concession to meet them at ₹${counterPrice.toLocaleString('en-IN')} (retaining the majority of margin while granting a real concession). Emphasize full GST invoice and official brand warranty.`
    }
    - NEVER quote a price lower than ₹${counterPrice.toLocaleString('en-IN')} or higher than ₹${lowestPreviousQuote.toLocaleString('en-IN')}.
-4. If recommendation is ACCEPT and buyer EXPLICITLY and ACTIVELY confirms/accepts the deal (Intent is DEAL_ACCEPTANCE, and buyer did NOT say no/refuse):
-   - Enthusiastically confirm at ₹${evaluatedOffer.toLocaleString('en-IN')}.
+4. If buyer EXPLICITLY and ACTIVELY confirms/accepts the deal (Intent is DEAL_ACCEPTANCE, and buyer did NOT say no/refuse):
+   - Enthusiastically confirm at ₹${(lowestPreviousQuote < target ? lowestPreviousQuote : evaluatedOffer).toLocaleString('en-IN')}.
+   - If buyer states they will pick up or collect the product, warmly confirm that the factory-sealed lot is held ready for pickup/collection at the central warehouse/hub with 100% GST invoice and official warranty.
    - Request company GSTIN and billing address to issue official pro-forma invoice.
 5. Tone: ${tone}. Use natural, professional Indian B2B trade conversational style with "ji". 2-4 sentences max.
 
@@ -810,13 +829,21 @@ Return ONLY a valid JSON object:
     // High-fidelity Deterministic Engine Fallback
     let replyText = '';
     let tacticApplied = '';
+    const finalAgreedPrice = (detectedIntent === 'DEAL_ACCEPTANCE' && lowestPreviousQuote < target)
+      ? lowestPreviousQuote
+      : (evaluatedOffer >= floor ? evaluatedOffer : counterPrice);
 
     if (detectedIntent === 'BUYER_REFUSAL' || isBuyerRefusal) {
       tacticApplied = 'Respectful Refusal Acknowledgement';
       replyText = `Namaste ${customerFirstName} ji, we completely understand and respect your decision. If our rate of ₹${counterPrice.toLocaleString('en-IN')} doesn't fit your procurement budget right now, no problem at all. We will keep you updated on upcoming inventory allocations. Please feel free to reach out whenever you have fresh requirements!`;
-    } else if (detectedIntent === 'DEAL_ACCEPTANCE' && (recommendation === 'ACCEPT' || evaluation?.canApprove) && !isBuyerRefusal) {
-      tacticApplied = 'Deal Confirmation & Pro-forma Issuance';
-      replyText = `Namaste ${customerFirstName} ji, wonderful! We are delighted to finalize this order for ${quantity} units of ${productName} at ₹${evaluatedOffer.toLocaleString('en-IN')}/unit. We have earmarked this consignment in our central hub with 100% GST invoice and official brand warranty. Please share your delivery address and GSTIN so we can issue your pro-forma invoice immediately!`;
+    } else if (detectedIntent === 'DEAL_ACCEPTANCE' && !isBuyerRefusal) {
+      if (hasPickupIntent) {
+        tacticApplied = 'Deal Finalized & Central Hub Pickup Scheduled';
+        replyText = `Namaste ${customerFirstName} ji, wonderful! We have confirmed and finalized your order for ${quantity} unit${quantity > 1 ? 's' : ''} of ${productName} at ₹${finalAgreedPrice.toLocaleString('en-IN')}. Your factory-sealed unit with 100% GST invoice and official brand warranty is being kept ready for collection at our central hub. Please share your billing details/GSTIN or let us know your estimated arrival time so we can have everything prepared for you!`;
+      } else {
+        tacticApplied = 'Deal Confirmation & Pro-forma Issuance';
+        replyText = `Namaste ${customerFirstName} ji, wonderful! We are delighted to finalize this order for ${quantity} unit${quantity > 1 ? 's' : ''} of ${productName} at ₹${finalAgreedPrice.toLocaleString('en-IN')}/unit. We have earmarked this consignment in our central hub with 100% GST invoice and official brand warranty. Please share your delivery address and GSTIN so we can issue your pro-forma invoice immediately!`;
+      }
     } else if (recommendation === 'REJECT') {
       tacticApplied = 'Floor Defense & Policy Rejection';
       if (detectedIntent === 'COMPETITOR_PRESSURE') {

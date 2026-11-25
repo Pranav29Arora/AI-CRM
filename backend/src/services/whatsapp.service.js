@@ -294,7 +294,25 @@ class WhatsAppService {
     }
 
     // Extract any new price or percentage discount offered by the buyer
-    const extractedOffer = extractOfferedPriceFromText(text, offeredPrice);
+    let extractedOffer = extractOfferedPriceFromText(text, null);
+
+    // If buyer did not state an explicit new number, check if they are accepting the salesperson's quote
+    if (!extractedOffer) {
+      const lastSalesMsg = [...(conversation.messages || [])].reverse().find(m => m.sender === 'salesperson' || m.sender === 'assistant' || m.isAiGenerated);
+      if (lastSalesMsg) {
+        const quotedMatches = [...(lastSalesMsg.text || '').matchAll(/(?:rate|counter|price|quote|concession|meet you at|lock at|offer is|can offer is|allocation at|consignments? at|per unit at|rate of|invoice at)\s*(?:is|of|a)?\s*₹\s*([0-9,]+)/gi)];
+        if (quotedMatches.length > 0) {
+          const lastQuoted = Number(quotedMatches[quotedMatches.length - 1][1].replace(/[^0-9]/g, ''));
+          if (lastQuoted >= (product.absoluteLowerLimit || 0)) {
+            extractedOffer = lastQuoted;
+          }
+        }
+      }
+    }
+    if (!extractedOffer) {
+      extractedOffer = offeredPrice || product.targetPrice;
+    }
+
     const buyerMessagesCount = (conversation.messages || []).filter(m => m.sender === 'buyer' || m.sender === 'customer').length;
     const currentRound = Math.max(1, buyerMessagesCount);
     const evaluation = negotiationService.evaluateBoundaries(product, extractedOffer, quantity, currentRound);
@@ -326,20 +344,39 @@ class WhatsAppService {
 
     // 5. Automatic Deal Closure Detection:
     // Deal can ONLY be closed if the buyer actively agreed AND did NOT refuse/say no!
-    const buyerRejected = /^(no|nah|nahi|nope|never|not interested|deal off|cancel|drop it|leave it)\b|(\bno\b|\bnah\b|\bnahi\b|\bnot interested\b|\bcancel\b|\bdrop it\b|\bleave it\b|\bcan't do\b|\bcant do\b|\bwon't buy\b|\bwont buy\b|\bdon't want\b|\bdont want\b|\bmat bhejo\b|\bnahi chahiye\b)/i.test(text.trim());
+    const lowerText = (text || '').toLowerCase().trim();
+    const buyerRejected = /^(no|nah|nahi|nope|never|not interested|deal off|cancel|drop it|leave it)\b|(\bno\b|\bnah\b|\bnahi\b|\bnot interested\b|\bcancel\b|\bdrop it\b|\bleave it\b|\bcan't do\b|\bcant do\b|\bwon't buy\b|\bwont buy\b|\bdon't want\b|\bdont want\b|\bmat bhejo\b|\bnahi chahiye\b)/i.test(lowerText);
 
-    const buyerAgreed = !buyerRejected && /(deal done|confirm deal|agree|send invoice|proforma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do)/i.test(text);
+    const hasAcceptanceWords = /(deal done|confirm deal|agree|agreed|accept|accepted|send invoice|proforma|pro-forma|pi bhejo|deal lock|pack karo|confirm karo|deal pakki|order confirm|done deal|deal final|finalise|finalize|lock kar do|lock it in|book it|book kar do|proceed|go ahead|lets do it|let's do it|done hai|theek hai|chalega|bhej do|le lunga|aa raha hu)/i.test(lowerText);
+    const hasPickupIntent = /(collect|pickup|pick up|take delivery|collection|coming to pick|be there to collect)/i.test(lowerText);
+    const isAffirmative = /^(yes|sure|ok|okay|yep|yeah|fine|perfect|great|super|alright|done|haan|ha ji|yes sure|sure thing|sounds good)[\s!.,]*$/i.test(lowerText) ||
+      /^(yes|sure|okay|ok|alright|perfect),?\s*(i will|i'll|we will|we'll|let's|lets|please|proceed|send|issue|generate|can collect|will collect|there to collect)/i.test(lowerText);
+    const isAffirmativeWithPickup = hasPickupIntent && /(sure|yes|ok|okay|will|ready|soon|coming|i am|i will|be there)/i.test(lowerText);
+    const hasCounterOfferOrCondition = /(\bbut\b|\bhowever\b|\bif you can\b|\bcan you do\b|\bdiscount\b|\bkam\b|\bless\b)/i.test(lowerText);
+
+    const lastSalesMsg = [...(conversation.messages || [])].reverse().find(m => m.sender === 'salesperson' || m.sender === 'assistant' || m.isAiGenerated);
+    const salesAskedToClose = lastSalesMsg && /(pro-forma|invoice|lock|proceed|book|confirm|shall we|shall i|let me know if we can lock|at ₹)/i.test(lastSalesMsg.text || '');
+
+    const buyerAgreed = !buyerRejected && !hasCounterOfferOrCondition && (
+      hasAcceptanceWords ||
+      isAffirmative ||
+      isAffirmativeWithPickup ||
+      (salesAskedToClose && (hasPickupIntent || /^(yes|sure|ok|okay|done|yep|yeah|fine|proceed|sounds good|great|alright)/i.test(lowerText)))
+    );
+
     const aiConfirmed = !buyerRejected && (
-      (aiStrategy.intent === 'DEAL_ACCEPTANCE' && /delighted to finalize|finalize this order|issue your pro-forma/i.test(aiStrategy.replyText || ''))
+      (aiStrategy.intent === 'DEAL_ACCEPTANCE' && /delighted to finalize|finalize this order|issue your pro-forma|confirmed and finalized|ready for collection/i.test(aiStrategy.replyText || ''))
     );
 
     let closedDealResult = null;
-    if (!buyerRejected && (buyerAgreed || (aiConfirmed && evaluation?.canApprove)) && customer && product && extractedOffer >= (product.absoluteLowerLimit || 0)) {
+    const finalDealPrice = extractedOffer >= (product.absoluteLowerLimit || 0) ? extractedOffer : (evaluation?.suggestedCounterPrice || product.preferredMinPrice);
+
+    if (!buyerRejected && (buyerAgreed || (aiConfirmed && evaluation?.canApprove)) && customer && product && finalDealPrice >= (product.absoluteLowerLimit || 0)) {
       try {
         closedDealResult = await dataService.recordClosedWonDeal({
           customerId: customer.id,
           productId: product.id,
-          finalPrice: extractedOffer,
+          finalPrice: finalDealPrice,
           quantity,
           conversationId,
           source: 'WhatsApp Desk'
