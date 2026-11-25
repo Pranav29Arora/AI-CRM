@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../services/authService.js';
 import { auth } from '../config/firebase.js';
-import { onAuthStateChanged, onIdTokenChanged } from 'firebase/auth';
+import { onAuthStateChanged, onIdTokenChanged, signOut } from 'firebase/auth';
 
 const AuthContext = createContext(null);
 
@@ -10,6 +10,20 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check if there is an active session in this tab/window, or explicit rememberMe
+    const isSessionActive = !!sessionStorage.getItem('aicrm_token');
+    const isRemembered = localStorage.getItem('aicrm_remember_me') === 'true';
+
+    // If starting a fresh site visit without an active session or rememberMe:
+    // clear any lingering persistent auth so user starts completely logged out on the Landing Page
+    if (!isSessionActive && !isRemembered) {
+      authService.clearStoredSession();
+      signOut(auth).catch(() => {});
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
     // 1. Listen directly to Firebase Authentication state changes
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
@@ -24,7 +38,7 @@ export const AuthProvider = ({ children }) => {
             role: 'Wholesale & Retail Director'
           };
 
-          authService.setStoredSession(freshToken, profile);
+          authService.setStoredSession(freshToken, profile, isRemembered);
           setUser(profile);
         } else {
           // Unauthenticated or logged out
@@ -43,7 +57,7 @@ export const AuthProvider = ({ children }) => {
       if (firebaseUser) {
         try {
           const freshToken = await firebaseUser.getIdToken();
-          authService.setStoredSession(freshToken, null);
+          authService.setStoredSession(freshToken, null, isRemembered);
         } catch (tokenErr) {
           console.warn('[AuthContext] Token refresh notice:', tokenErr);
         }

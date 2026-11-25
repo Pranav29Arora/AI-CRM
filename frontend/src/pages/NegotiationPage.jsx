@@ -151,10 +151,10 @@ export const NegotiationPage = () => {
         const catalogPrice = Number(item.sellingPrice || catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
         // Explicit offered price if stored on item
         const explicitOffer = Number(item.offeredPrice || item.offerPrice || 0);
-        // Customer offer: explicitOffer > customer budget > catalog preferred min
-        const customerOffer = explicitOffer > 0 
-          ? explicitOffer 
-          : (custBudget > 0 ? custBudget : (catalogMatch ? Number(catalogMatch.preferredMinPrice) : catalogPrice));
+        // Customer offer: customer budget given in Add Customer page > explicitOffer > catalog preferred min
+        const customerOffer = custBudget > 0 
+          ? custBudget 
+          : (explicitOffer > 0 ? explicitOffer : (catalogMatch ? Number(catalogMatch.preferredMinPrice) : catalogPrice));
         const explicitQty = Number(item.quantity || item.qty || 1);
 
         const resolvedId = catalogMatch ? catalogMatch.id : (item.id || item.productId || '');
@@ -372,12 +372,14 @@ export const NegotiationPage = () => {
     let targetOffer = null;
     let targetQty = 1;
 
+    const custBudget = Number(cust.budget) || 0;
+
     if (specificProductId) {
       targetProduct = prodsList.find(p => p.id === specificProductId);
       // Check if this product is in the customer's interested items to get its specific offer and quantity
       const specificInterest = interestedItems.find(item => isItemProductMatch(item, targetProduct));
       if (specificInterest) {
-        if (specificInterest.offeredPrice > 0) targetOffer = specificInterest.offeredPrice;
+        targetOffer = custBudget > 0 ? custBudget : (specificInterest.offeredPrice > 0 ? specificInterest.offeredPrice : null);
         if (specificInterest.quantity > 0) targetQty = specificInterest.quantity;
       }
     }
@@ -387,8 +389,10 @@ export const NegotiationPage = () => {
       const firstInterest = interestedItems[0];
       targetProduct = findMatchingProduct(firstInterest, prodsList);
 
-      // Customer's explicit offered price from interested item
-      if (firstInterest.offeredPrice > 0) {
+      // Customer's explicit offered price from budget or interested item
+      if (custBudget > 0) {
+        targetOffer = custBudget;
+      } else if (firstInterest.offeredPrice > 0) {
         targetOffer = firstInterest.offeredPrice;
       }
       // Customer's required quantity from interested item
@@ -403,7 +407,8 @@ export const NegotiationPage = () => {
     // If still no target product, but existing negotiation exists
     if (!targetProduct && existingNeg) {
       targetProduct = prodsList.find(p => p.id === existingNeg.productId);
-      if (existingNeg.currentOffer > 0) targetOffer = existingNeg.currentOffer;
+      if (custBudget > 0) targetOffer = custBudget;
+      else if (existingNeg.currentOffer > 0) targetOffer = existingNeg.currentOffer;
       if (existingNeg.quantity > 0) targetQty = existingNeg.quantity;
     }
 
@@ -424,8 +429,7 @@ export const NegotiationPage = () => {
 
     // Determine offer price from customer budget or product floor if not set
     if (targetProduct) {
-      if (!targetOffer || targetOffer <= 0) {
-        const custBudget = Number(cust.budget) || 0;
+      if (!targetOffer || targetOffer <= 0 || custBudget > 0) {
         if (custBudget > 0) {
           targetOffer = custBudget;
         } else if (existingNeg && existingNeg.currentOffer > 0) {
@@ -454,9 +458,10 @@ export const NegotiationPage = () => {
     const matched = findMatchingProduct(item, products);
 
     if (matched) {
-      const offer = item.offeredPrice > 0 
-        ? item.offeredPrice 
-        : (Number(selectedCustomer?.budget) > 0 ? Number(selectedCustomer.budget) : (matched.preferredMinPrice || matched.targetPrice));
+      const custBudget = Number(selectedCustomer?.budget) || 0;
+      const offer = custBudget > 0 
+        ? custBudget 
+        : (item.offeredPrice > 0 ? item.offeredPrice : (matched.preferredMinPrice || matched.targetPrice));
       const itemQty = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
       setSelectedProductId(matched.id);
       setOfferPrice(offer);
@@ -499,12 +504,13 @@ export const NegotiationPage = () => {
     // Check if this product is one of the customer's interested items
     const interestMatch = customerInterestedProducts.find(item => isItemProductMatch(item, prod));
 
-    let newOffer = prod.preferredMinPrice || prod.targetPrice;
+    const custBudget = Number(selectedCustomer?.budget) || 0;
+    let newOffer = custBudget > 0 ? custBudget : (prod.preferredMinPrice || prod.targetPrice);
     let newQty = 1;
 
     if (interestMatch) {
-      if (interestMatch.offeredPrice > 0) newOffer = interestMatch.offeredPrice;
-      else if (Number(selectedCustomer?.budget) > 0) newOffer = Number(selectedCustomer.budget);
+      if (custBudget > 0) newOffer = custBudget;
+      else if (interestMatch.offeredPrice > 0) newOffer = interestMatch.offeredPrice;
       if (interestMatch.quantity > 0) newQty = interestMatch.quantity;
     }
 

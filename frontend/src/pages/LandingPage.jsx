@@ -173,25 +173,36 @@ export const LandingPage = () => {
 
           {/* Right Side: Log In, Sign Up, and Dashboard/Profile buttons */}
           <div className="hidden md:flex items-center gap-3">
-            <Link
-              to="/login"
-              className="px-4 py-2.5 text-xs font-bold text-slate-300 hover:text-white transition-colors rounded-xl hover:bg-slate-900/60"
-            >
-              Log In
-            </Link>
-            <Link
-              to="/signup"
-              className="px-4 py-2.5 text-xs font-bold text-slate-300 hover:text-white transition-colors rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-900/60"
-            >
-              Sign Up
-            </Link>
-            {user ? (
+            {!user ? (
+              <>
+                <Link
+                  to="/login"
+                  className="px-4 py-2.5 text-xs font-bold text-slate-300 hover:text-white transition-colors rounded-xl hover:bg-slate-900/60"
+                >
+                  Log In
+                </Link>
+                <Link
+                  to="/signup"
+                  className="px-4 py-2.5 text-xs font-bold text-slate-300 hover:text-white transition-colors rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-900/60"
+                >
+                  Sign Up
+                </Link>
+                <Link
+                  to="/login"
+                  className="px-5 py-2.5 text-xs font-bold bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-all hover:scale-[1.02] flex items-center gap-1.5"
+                >
+                  <span>Start Free Workspace</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </>
+            ) : (
               <div className="flex items-center gap-2">
                 <Link
                   to="/dashboard"
                   className="px-4 py-2.5 text-xs font-bold bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-all hover:scale-[1.02] flex items-center gap-1.5"
                 >
-                  <span>Dashboard</span>
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  <span>Go to Workspace</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
 
@@ -233,14 +244,6 @@ export const LandingPage = () => {
                   )}
                 </div>
               </div>
-            ) : (
-              <Link
-                to="/signup"
-                className="px-5 py-2.5 text-xs font-bold bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-all hover:scale-[1.02] flex items-center gap-1.5"
-              >
-                <span>Get Started Free</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
             )}
           </div>
 
@@ -282,19 +285,29 @@ export const LandingPage = () => {
               Workflow
             </button>
             <div className="pt-3 border-t border-slate-800 flex flex-col gap-2.5">
-              <Link
-                to="/login"
-                className="w-full text-center py-2.5 text-xs font-bold text-slate-200 border border-slate-800 rounded-xl hover:bg-slate-900"
-              >
-                Log In
-              </Link>
-              <Link
-                to="/signup"
-                className="w-full text-center py-2.5 text-xs font-bold text-slate-200 border border-slate-800 rounded-xl hover:bg-slate-900"
-              >
-                Sign Up
-              </Link>
-              {user && (
+              {!user ? (
+                <>
+                  <Link
+                    to="/login"
+                    className="w-full text-center py-2.5 text-xs font-bold text-slate-200 border border-slate-800 rounded-xl hover:bg-slate-900"
+                  >
+                    Log In
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className="w-full text-center py-2.5 text-xs font-bold text-slate-200 border border-slate-800 rounded-xl hover:bg-slate-900"
+                  >
+                    Sign Up
+                  </Link>
+                  <Link
+                    to="/login"
+                    className="w-full text-center py-2.5 text-xs font-bold bg-gradient-to-r from-brand-600 to-indigo-600 text-white rounded-xl shadow-md flex items-center justify-center gap-1.5"
+                  >
+                    <span>Start Free Workspace</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </>
+              ) : (
                 <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5 mt-1">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-xs font-bold text-white shadow-sm flex-shrink-0">

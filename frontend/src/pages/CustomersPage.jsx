@@ -141,7 +141,7 @@ export const CustomersPage = () => {
       }
       const finalSellingPrice = sellingPrice > 0 ? sellingPrice : Number(catalogMatch?.targetPrice || catalogMatch?.preferredMinPrice || 0);
       const explicitOffer = Number(prod.offeredPrice || prod.offerPrice || 0);
-      const finalOfferPrice = explicitOffer > 0 ? explicitOffer : (Number(custBudget) > 0 ? Number(custBudget) : 0);
+      const finalOfferPrice = Number(custBudget) > 0 ? Number(custBudget) : (explicitOffer > 0 ? explicitOffer : 0);
       const explicitQty = Number(prod.quantity || prod.qty || 1);
 
       return {
@@ -251,11 +251,12 @@ export const CustomersPage = () => {
       setFormError('');
 
       // Build structured interestedProducts list with catalog selling prices, customer offered prices & required quantities
+      const custBudget = Number(formData.budget) || 0;
       let interestedProducts = (formData.selectedProducts || []).map(p => ({
         id: p.id || '',
         name: p.name,
         sellingPrice: Number(p.sellingPrice) || 0,
-        offeredPrice: Number(p.offeredPrice !== undefined && p.offeredPrice !== '' ? p.offeredPrice : (formData.budget || 0)),
+        offeredPrice: custBudget > 0 ? custBudget : (Number(p.offeredPrice) || 0),
         quantity: Math.max(1, Number(p.quantity) || 1),
         sku: p.sku || '',
         category: p.category || ''
@@ -265,7 +266,7 @@ export const CustomersPage = () => {
       if (formData.customProductInput?.trim()) {
         const customName = formData.customProductInput.trim();
         const match = availableProducts.find(p => p.name.toLowerCase() === customName.toLowerCase());
-        const defaultOffer = Number(formData.budget) || (match ? Number(match.preferredMinPrice || match.targetPrice || 0) : 0);
+        const defaultOffer = custBudget > 0 ? custBudget : (match ? Number(match.preferredMinPrice || match.targetPrice || 0) : 0);
         interestedProducts.push({
           id: match?.id || '',
           name: customName,
@@ -315,11 +316,12 @@ export const CustomersPage = () => {
       setSubmitting(true);
       setFormError('');
 
+      const custBudget = Number(formData.budget) || 0;
       let interestedProducts = (formData.selectedProducts || []).map(p => ({
         id: p.id || '',
         name: p.name,
         sellingPrice: Number(p.sellingPrice) || 0,
-        offeredPrice: Number(p.offeredPrice !== undefined && p.offeredPrice !== '' ? p.offeredPrice : (formData.budget || 0)),
+        offeredPrice: custBudget > 0 ? custBudget : (Number(p.offeredPrice) || 0),
         quantity: Math.max(1, Number(p.quantity) || 1),
         sku: p.sku || '',
         category: p.category || ''
@@ -328,7 +330,7 @@ export const CustomersPage = () => {
       if (formData.customProductInput?.trim()) {
         const customName = formData.customProductInput.trim();
         const match = availableProducts.find(p => p.name.toLowerCase() === customName.toLowerCase());
-        const defaultOffer = Number(formData.budget) || (match ? Number(match.preferredMinPrice || match.targetPrice || 0) : 0);
+        const defaultOffer = custBudget > 0 ? custBudget : (match ? Number(match.preferredMinPrice || match.targetPrice || 0) : 0);
         interestedProducts.push({
           id: match?.id || '',
           name: customName,
@@ -440,7 +442,7 @@ export const CustomersPage = () => {
           selectedProducts: (prev.selectedProducts || []).filter(sp => (sp.id ? sp.id !== prod.id : sp.name !== prod.name))
         }));
       } else {
-        const defaultOffer = Number(formData.budget) || Number(prod.preferredMinPrice || prod.targetPrice || 0);
+        const defaultOffer = Number(formData.budget) > 0 ? Number(formData.budget) : Number(prod.preferredMinPrice || prod.targetPrice || 0);
         setFormData(prev => ({
           ...prev,
           selectedProducts: [
@@ -1236,7 +1238,17 @@ export const CustomersPage = () => {
                   min="0"
                   placeholder="e.g. 86500"
                   value={formData.budget}
-                  onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                  onChange={(e) => {
+                    const newBudget = e.target.value;
+                    setFormData(prev => ({
+                      ...prev,
+                      budget: newBudget,
+                      selectedProducts: (prev.selectedProducts || []).map(p => ({
+                        ...p,
+                        offeredPrice: Number(newBudget) > 0 ? Number(newBudget) : p.offeredPrice
+                      }))
+                    }));
+                  }}
                   className="glass-input block w-full px-3 py-2 text-xs rounded-xl font-mono"
                 />
               </div>
@@ -1339,7 +1351,17 @@ export const CustomersPage = () => {
                     min="0"
                     placeholder="e.g. 86500"
                     value={formData.budget}
-                    onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                    onChange={(e) => {
+                      const newBudget = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        budget: newBudget,
+                        selectedProducts: (prev.selectedProducts || []).map(p => ({
+                          ...p,
+                          offeredPrice: Number(newBudget) > 0 ? Number(newBudget) : p.offeredPrice
+                        }))
+                      }));
+                    }}
                     className="glass-input block w-full px-3 py-2 text-xs rounded-xl font-mono"
                   />
                 </div>
